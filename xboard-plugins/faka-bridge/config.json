@@ -1,0 +1,43 @@
+{
+  "name": "FakaBridge",
+  "code": "faka_bridge",
+  "version": "1.0.0",
+  "description": "发卡网(MoNexus)桥接插件 - 积分购买后自动创建/续费 Xboard 订阅",
+  "author": "Amo",
+  "type": "feature",
+  "require": {
+    "xboard": ">=1.0.0"
+  },
+  "config": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "label": "启用桥接",
+      "description": "是否启用发卡网桥接"
+    },
+    "hmac_secret": {
+      "type": "string",
+      "default": "",
+      "label": "HMAC 签名密钥",
+      "description": "与 MoNexus 共享的 HMAC-SHA256 签名密钥，用于验证回调请求"
+    },
+    "time_window": {
+      "type": "number",
+      "default": 300,
+      "label": "时间窗口(秒)",
+      "description": "允许的时间戳偏差，防止重放攻击"
+    },
+    "auto_create_user": {
+      "type": "boolean",
+      "default": true,
+      "label": "自动创建用户",
+      "description": "邮箱不存在时自动创建 Xboard 用户"
+    },
+    "default_group_id": {
+      "type": "string",
+      "default": "",
+      "label": "默认权限组ID",
+      "description": "自动创建用户时的默认权限组，可留空"
+    }
+  }
+}
