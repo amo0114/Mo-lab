@@ -121,6 +121,38 @@ class WebhookController extends Controller
         }
     }
 
+    /**
+     * GET plan-capacity — MoNexus checkout precheck for Xboard capacity_limit.
+     * Signed query: sku + paid_at + sign.
+     */
+    public function planCapacity(Request $request)
+    {
+        try {
+            $this->verifySignature($request);
+
+            $sku = trim((string) $request->input('sku'));
+            if ($sku === '') {
+                throw new ApiException('缺少必要参数: sku');
+            }
+
+            $result = $this->orderService->getPlanCapacity($sku);
+
+            return response()->json(array_merge(['success' => true], $result));
+        } catch (ApiException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        } catch (\Throwable $e) {
+            Log::error('[FakaBridge] planCapacity 异常: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => '内部服务错误',
+            ], 500);
+        }
+    }
+
     protected function verifySignature(Request $request): void
     {
         $this->config->assertReady();

@@ -36,6 +36,7 @@ PluginManager 只挂 `api` 中间件，**不会**自动加 `/api/v1`，路由已
 |------|------|
 | POST | `/plugin/faka-bridge/order-paid` |
 | GET  | `/plugin/faka-bridge/order-status` |
+| GET  | `/plugin/faka-bridge/plan-capacity` |
 
 契约全文：[`docs/monexus-xboard-contract.md`](../../docs/monexus-xboard-contract.md)  
 部署步骤：[`docs/faka-bridge-deploy.md`](../../docs/faka-bridge-deploy.md)
@@ -50,17 +51,44 @@ PluginManager 只挂 `api` 中间件，**不会**自动加 `/api/v1`，路由已
 
 回调默认 `period=monthly`。命名 SKU（如 `aster-basic-monthly`）以 `SKU_MAPPING` 为准，忽略请求体中的 period。
 
-## 逻辑加固（v1.1.0）
+## 逻辑加固（v1.1.x）
 
 ```text
 claim faka_orders (unique)
   → lock row
   → createFromRequest
   → UPDATE xboard_trade_no   ← before paid
-  → OrderService::paid()     ← sync open + order.open.after → completed
+  → ensurePaid (refresh + paid/open)  ← 必须落到 Xboard STATUS_COMPLETED
   → reconcileStatus
   → on error: failed + error_log (claim kept)
 ```
+
+### v1.2.0 plan-capacity
+
+供 MoNexus 结算预检读取 Xboard `capacity_limit`（订阅人数限制）：
+
+- `GET /plugin/faka-bridge/plan-capacity?sku=...&paid_at=...&sign=...`
+- 返回 `capacity_limit / active_users / remaining / sellable`
+- **不**限制升/降级；仅回答「该 plan 是否还能给新用户开通」
+
+### v1.1.1 关键修复（有用户 / 订单待支付 / 无套餐）
+
+根因：`OrderService::createFromRequest` 返回的内存模型常为 `status=null`，而
+`OrderService::paid()` 使用严格比较 `status !== STATUS_PENDING(0)`，会把 `null`
+误判为「已支付」并直接 `return true`，**从未真正 paid/open**。
+
+表现：
+
+- 后台有新建用户（findOrCreateUser 已执行）
+- 订单卡在 **待支付**
+- 用户无套餐 / `expired_at` 未写
+- Faka 侧 `faka_orders.status=processing` 且带 `trade_no`，回调却回报 success
+
+修复：
+
+1. `ensurePaid()` 先 `$order->refresh()`，再按真实 DB 状态 paid / 补 open
+2. `isTerminalSuccess()` 仅 `completed`（不再把 `processing` 当成功）
+3. `canResume()` 对 `processing+trade_no` 允许重试，卡住单可再次回调修单
 
 配置项（后台）：`hmac_secret`、`time_window`、`enabled`、`auto_create_user`、`default_group_id`。
 

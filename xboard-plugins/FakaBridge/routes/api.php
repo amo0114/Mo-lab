@@ -12,6 +12,7 @@ use Plugin\FakaBridge\Controllers\WebhookController;
 | Production (v.uuwu.de / cedar2025 xboard:new) is verified WITHOUT /api/v1:
 |   POST /plugin/faka-bridge/order-paid
 |   GET  /plugin/faka-bridge/order-status
+|   GET  /plugin/faka-bridge/plan-capacity
 |
 | Paths with /api/v1/plugin/... return 404 on production — do not re-add.
 |
@@ -19,4 +20,5 @@ use Plugin\FakaBridge\Controllers\WebhookController;
 Route::prefix('plugin/faka-bridge')->group(function () {
     Route::post('order-paid', [WebhookController::class, 'orderPaid']);
     Route::get('order-status', [WebhookController::class, 'orderStatus']);
+    Route::get('plan-capacity', [WebhookController::class, 'planCapacity']);
 });

@@ -29,7 +29,7 @@ MoNexus 内部积分购买完成后,自动在 Xboard 创建/续费用户订阅�
 
 | 规则 | 说明 |
 |------|------|
-| 邮箱定位 | 所有订单通过 `email` 字段匹配 Xboard 用户,不存在则自动创建 |
+| 邮箱定位 | 所有订单通过 `email` 字段匹配 Xboard 用户,不存在则自动创建。**该邮箱由买家在 MoNexus 下单时填写（推荐 `purchaseForm.xboardEmail`），不是强制等于 MoNexus 登录邮箱** |
 | 幂等 | MoNexus `order_no` 全局唯一,重复回调只发货一次 |
 | 防伪造 | 所有请求携带 HMAC-SHA256 签名,密钥仅双方知晓 |
 | 防重放 | 请求携带 `paid_at` 时间戳,偏差超过 300s 拒绝 |
@@ -80,8 +80,10 @@ params = {
 
 payload = "email=user@example.com&order_no=MN-20260728-001&paid_at=1785250533&period=monthly&sku=aster-basic-monthly"
 sign = HMAC-SHA256(payload, "test_secret")
-     = "e4059f5d6e4d8a028a217a99d8639869bac97f4885eeb3eeffa8faf714648db8"
+     = "e7b175f00477b9bad99c7b60667ff2883562312d6c8f39c1b9a94f492f44ace1"
 ```
+
+> 以算法为准；若文档与实现的 hex 不一致，以排序拼接 + HMAC-SHA256 计算结果为准。
 
 ### 1.3 TypeScript 参考实现
 

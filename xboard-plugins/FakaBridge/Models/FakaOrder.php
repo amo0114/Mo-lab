@@ -33,12 +33,13 @@ class FakaOrder extends Model
         'plan_id' => 'integer',
     ];
 
+    /**
+     * Only COMPLETED is terminal. PROCESSING with trade_no may still mean
+     * Xboard order stuck at 待支付 if paid()/open never really ran.
+     */
     public function isTerminalSuccess(): bool
     {
-        return in_array($this->status, [
-            self::STATUS_COMPLETED,
-            self::STATUS_PROCESSING,
-        ], true) && !empty($this->xboard_trade_no);
+        return $this->status === self::STATUS_COMPLETED && !empty($this->xboard_trade_no);
     }
 
     public function canResume(): bool
@@ -57,9 +58,9 @@ class FakaOrder extends Model
             return true;
         }
 
+        // Stuck after createFromRequest: must re-enter ensurePaid/open.
         if ($this->status === self::STATUS_PROCESSING && !empty($this->xboard_trade_no)) {
-            // Likely already paid; treat as success (idempotent)
-            return false;
+            return true;
         }
 
         return false;

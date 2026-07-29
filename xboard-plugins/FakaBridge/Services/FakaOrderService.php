@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Plan;
 use App\Models\User;
 use App\Services\OrderService;
+use App\Services\PlanService;
 use App\Services\UserService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -235,6 +236,8 @@ class FakaOrderService
             }
 
             $order = OrderService::createFromRequest($user, $plan, $mappedPeriod);
+            // Reload from DB so status is real PENDING(0), not in-memory null.
+            $order->refresh();
 
             // Bind before paid(): open.after runs inside paid() via dispatchSync.
             $locked->update([
@@ -269,16 +272,72 @@ class FakaOrderService
 
     protected function ensurePaid(Order $order, string $externalOrderNo): void
     {
+        // Critical: createFromRequest often leaves in-memory status=null even when
+        // DB default is 0(待支付). OrderService::paid() uses strict !== PENDING and
+        // would early-return true without charging/opening — user stays 待支付, no plan.
         $order->refresh();
         $callbackNo = 'faka:' . $externalOrderNo;
 
-        if ((int) $order->status !== (int) Order::STATUS_PENDING) {
+        $status = (int) $order->status;
+
+        if ($status === (int) Order::STATUS_COMPLETED) {
             return;
+        }
+
+        // 开通中 but open() never finished (job failed / nested-tx) → retry open path.
+        if ($status === (int) Order::STATUS_PROCESSING) {
+            $orderService = new OrderService($order);
+            try {
+                $orderService->open();
+            } catch (\Throwable $e) {
+                throw new ApiException('订单开通失败: ' . $e->getMessage());
+            }
+            $order->refresh();
+            if ((int) $order->status !== (int) Order::STATUS_COMPLETED) {
+                throw new ApiException('订单开通后仍未完成');
+            }
+
+            return;
+        }
+
+        if ($status !== (int) Order::STATUS_PENDING) {
+            throw new ApiException('订单状态异常，无法支付: status=' . $status);
         }
 
         $orderService = new OrderService($order);
         if (!$orderService->paid($callbackNo)) {
-            throw new ApiException('订单支付失败');
+            // paid() may leave status=PROCESSING if open failed after save
+            $order->refresh();
+            throw new ApiException(
+                '订单支付失败 (xboard_status=' . (int) $order->status . ')'
+            );
+        }
+
+        $order->refresh();
+        if ((int) $order->status !== (int) Order::STATUS_COMPLETED) {
+            // paid() returned true but open did not complete (null-status early return
+            // or open swallowed). Force open once more.
+            if ((int) $order->status === (int) Order::STATUS_PENDING) {
+                // Truly still pending: paid() was a no-op — call again after refresh
+                // already done; set status explicitly and re-invoke.
+                if (!$orderService->paid($callbackNo)) {
+                    throw new ApiException('订单支付失败(二次)');
+                }
+                $order->refresh();
+            }
+            if ((int) $order->status === (int) Order::STATUS_PROCESSING) {
+                try {
+                    $orderService->open();
+                } catch (\Throwable $e) {
+                    throw new ApiException('订单开通失败: ' . $e->getMessage());
+                }
+                $order->refresh();
+            }
+            if ((int) $order->status !== (int) Order::STATUS_COMPLETED) {
+                throw new ApiException(
+                    '支付回调后订单未完成 (xboard_status=' . (int) $order->status . ')'
+                );
+            }
         }
     }
 
@@ -350,6 +409,71 @@ class FakaOrderService
         }
 
         return $payload;
+    }
+
+    /**
+     * Capacity snapshot for MoNexus precheck (Xboard capacity_limit).
+     * Does not create users or orders. Upgrade/downgrade policy is unchanged —
+     * this only answers "can a *new* holder of this plan be created?".
+     *
+     * @return array{
+     *   sku: string,
+     *   plan_id: int,
+     *   period: string,
+     *   capacity_limit: int|null,
+     *   active_users: int,
+     *   remaining: int|null,
+     *   sellable: bool,
+     *   show: bool,
+     *   sell: bool
+     * }
+     */
+    public function getPlanCapacity(string $sku, string $period = 'monthly'): array
+    {
+        $sku = strtolower(trim($sku));
+        $mapping = $this->resolveSku($sku, $period);
+        $planId = $mapping['plan_id'];
+        $mappedPeriod = $mapping['period'];
+
+        $plan = Plan::find($planId);
+        if (!$plan) {
+            throw new ApiException("套餐不存在 (plan_id={$planId})");
+        }
+
+        $planService = new PlanService($plan);
+        $capacityLimit = $plan->capacity_limit !== null ? (int) $plan->capacity_limit : null;
+
+        $activeUsers = (int) User::where('plan_id', $plan->id)
+            ->where(function ($query) {
+                $query->where('expired_at', '>=', time())
+                    ->orWhereNull('expired_at');
+            })
+            ->count();
+
+        $remaining = null;
+        if ($capacityLimit !== null) {
+            $remaining = max(0, $capacityLimit - $activeUsers);
+        }
+
+        $hasCapacity = $planService->hasCapacity($plan);
+        $show = (bool) $plan->show;
+        $sell = (bool) $plan->sell;
+        // New-purchase sellable: plan listed for sale + capacity remaining.
+        // Note: renewals/same-plan do not consume capacity the same way; MoNexus
+        // may still sell renewal SKUs when remaining=0 for users already on plan.
+        $sellable = $show && $sell && $hasCapacity;
+
+        return [
+            'sku' => $sku,
+            'plan_id' => $planId,
+            'period' => $mappedPeriod,
+            'capacity_limit' => $capacityLimit,
+            'active_users' => $activeUsers,
+            'remaining' => $remaining,
+            'sellable' => $sellable,
+            'show' => $show,
+            'sell' => $sell,
+        ];
     }
 
     /**
