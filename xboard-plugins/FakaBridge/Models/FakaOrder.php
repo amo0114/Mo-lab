@@ -10,6 +10,8 @@ class FakaOrder extends Model
     public const STATUS_PROCESSING = 'processing';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_FAILED = 'failed';
+    /** MoNexus refund / admin revoke — subscription should no longer be active. */
+    public const STATUS_REVOKED = 'revoked';
 
     protected $table = 'faka_orders';
 
@@ -42,8 +44,18 @@ class FakaOrder extends Model
         return $this->status === self::STATUS_COMPLETED && !empty($this->xboard_trade_no);
     }
 
+    public function isRevoked(): bool
+    {
+        return $this->status === self::STATUS_REVOKED;
+    }
+
     public function canResume(): bool
     {
+        // Never re-open a revoked (refunded) provision.
+        if ($this->status === self::STATUS_REVOKED) {
+            return false;
+        }
+
         if ($this->status === self::STATUS_PENDING) {
             return true;
         }

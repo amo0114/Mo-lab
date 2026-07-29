@@ -102,7 +102,10 @@ class WebhookController extends Controller
                 'trade_no' => $fakaOrder->xboard_trade_no,
                 'created_at' => $fakaOrder->created_at,
                 'completed_at' => $fakaOrder->completed_at,
-                'error_log' => $fakaOrder->status === FakaOrder::STATUS_FAILED
+                'error_log' => in_array($fakaOrder->status, [
+                    FakaOrder::STATUS_FAILED,
+                    FakaOrder::STATUS_REVOKED,
+                ], true)
                     ? $fakaOrder->error_log
                     : null,
             ]);
@@ -113,6 +116,61 @@ class WebhookController extends Controller
             ], 400);
         } catch (\Throwable $e) {
             Log::error('[FakaBridge] orderStatus 异常: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => '内部服务错误',
+            ], 500);
+        }
+    }
+
+    /**
+     * POST order-revoke — MoNexus refund / admin revoke after successful provision.
+     * Body: order_no, paid_at, sign, optional reason.
+     */
+    public function orderRevoke(Request $request)
+    {
+        Log::info('[FakaBridge] 收到撤销', [
+            'ip' => $request->ip(),
+            'order_no' => $request->input('order_no'),
+        ]);
+
+        try {
+            $this->verifySignature($request);
+
+            $externalOrderNo = trim((string) $request->input('order_no'));
+            $reason = $request->input('reason');
+            if ($externalOrderNo === '') {
+                throw new ApiException('缺少必要参数: order_no');
+            }
+            if (strlen($externalOrderNo) > 64) {
+                throw new ApiException('order_no 过长');
+            }
+
+            $result = $this->orderService->revokeOrder(
+                $externalOrderNo,
+                $reason !== null && $reason !== '' ? (string) $reason : null
+            );
+
+            return response()->json([
+                'success' => true,
+                'order_no' => $result['order_no'],
+                'status' => $result['status'],
+                'trade_no' => $result['trade_no'],
+                'expired_user' => $result['expired_user'],
+                'message' => $result['message'],
+            ]);
+        } catch (ApiException $e) {
+            Log::warning('[FakaBridge] 撤销业务异常: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        } catch (\Throwable $e) {
+            Log::error('[FakaBridge] 撤销系统异常: ' . $e->getMessage(), [
+                'exception' => $e::class,
+            ]);
 
             return response()->json([
                 'success' => false,

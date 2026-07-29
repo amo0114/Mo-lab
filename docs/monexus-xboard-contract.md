@@ -1,8 +1,8 @@
 # MoNexus ↔ Xboard 桥接契约
 
-> **版本**: v1.1.1  
+> **版本**: v1.2.0  
 > **更新**: 2026-07-29  
-> **状态**: 生产验收通过 ✅（路径无 `/api/v1`；域名 `v.uuwu.de`）
+> **状态**: 生产验收通过 ✅（路径无 `/api/v1`；域名 `v.uuwu.de`）+ 1.4.0 退款撤销
 
 ---
 
@@ -13,16 +13,15 @@ MoNexus 内部积分购买完成后,自动在 Xboard 创建/续费用户订阅�
 ### 架构
 
 ```
-┌──────────────┐         POST /plugin/faka-bridge/order-paid        ┌──────────────┐
+┌──────────────┐  POST order-paid / GET status / POST revoke / capacity  ┌──────────────┐
 │   MoNexus   │ ────────────────────────────────────────────────────────► │    Xboard    │
 │ (发卡网)    │  ◄──────────────────────────────────────────────────────── │  FakaBridge  │
-│              │        200 { success, trade_no }                          │   (Plugin)   │
+│              │        200 { success, trade_no | status | remaining }     │   (Plugin)   │
 └──────────────┘                                                           └──────────────┘
       │                                                                          │
-      │ 积分购买完成                                                              │ 按邮箱查用户 → 不存在则创建
-      │ 订单标记 paid                                                            │ 创建订单 → 标记支付 → 自动开通
+      │ 积分购买 → outbox → 开通；退款 → revoke                                   │ 按邮箱查用户 → 开通/过期订阅
       ▼                                                                          ▼
-  MoNexus 订单表                                                           Xboard 订单已开通
+  MoNexus 订单 + FakaBridgeTask                                            faka_orders + User
 ```
 
 ### 基本规则

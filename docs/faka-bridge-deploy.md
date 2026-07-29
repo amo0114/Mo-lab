@@ -95,6 +95,10 @@ SHOW TABLES LIKE 'faka_orders';
 ```text
 POST /plugin/faka-bridge/order-paid
 GET  /plugin/faka-bridge/order-status
+POST /plugin/faka-bridge/order-revoke
+GET  /plugin/faka-bridge/plan-capacity
+POST /plugin/faka-bridge/plan-capacity
+GET  /plugin/faka-bridge/plan-catalog
 ```
 
 > **生产已验收（2026-07-29）**：正确路径**不带** `/api/v1`。  
@@ -112,9 +116,12 @@ curl -sS "https://v.uuwu.de/plugin/faka-bridge/order-status?order_no=probe&sign=
 ```env
 FAKA_BRIDGE_URL=https://v.uuwu.de/plugin/faka-bridge/order-paid
 FAKA_BRIDGE_SECRET=<与插件 hmac_secret 相同>
-FAKA_BRIDGE_TIMEOUT=5000
-FAKA_BRIDGE_RETRY=3
+FAKA_BRIDGE_TIMEOUT_MS=5000
+FAKA_BRIDGE_MAX_ATTEMPTS=3
+FAKA_BRIDGE_PANEL_URL=https://v.uuwu.de
 ```
+
+插件版本 **≥ 1.4.0**（含 `order-revoke`）。部署后在 Xboard 后台确认插件已启用。
 
 商品 SKU 必须落在 `FakaOrderService::SKU_MAPPING` 或 `plan-{id}-{period}` 别名。
 

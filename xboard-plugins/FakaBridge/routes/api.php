@@ -12,6 +12,7 @@ use Plugin\FakaBridge\Controllers\WebhookController;
 | Production (v.uuwu.de / cedar2025 xboard:new) is verified WITHOUT /api/v1:
 |   POST /plugin/faka-bridge/order-paid
 |   GET  /plugin/faka-bridge/order-status
+|   POST /plugin/faka-bridge/order-revoke
 |   GET  /plugin/faka-bridge/plan-capacity
 |   POST /plugin/faka-bridge/plan-capacity
 |   GET  /plugin/faka-bridge/plan-catalog
@@ -23,6 +24,7 @@ use Plugin\FakaBridge\Controllers\WebhookController;
 Route::prefix('plugin/faka-bridge')->group(function () {
     Route::post('order-paid', [WebhookController::class, 'orderPaid']);
     Route::get('order-status', [WebhookController::class, 'orderStatus']);
+    Route::post('order-revoke', [WebhookController::class, 'orderRevoke']);
     Route::get('plan-capacity', [WebhookController::class, 'planCapacity']);
     Route::post('plan-capacity', [WebhookController::class, 'setPlanCapacity']);
     Route::get('plan-catalog', [WebhookController::class, 'planCatalog']);

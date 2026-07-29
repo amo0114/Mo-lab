@@ -36,9 +36,12 @@ PluginManager 只挂 `api` 中间件，**不会**自动加 `/api/v1`，路由已
 |------|------|
 | POST | `/plugin/faka-bridge/order-paid` |
 | GET  | `/plugin/faka-bridge/order-status` |
+| POST | `/plugin/faka-bridge/order-revoke` |
 | GET  | `/plugin/faka-bridge/plan-capacity` |
 | POST | `/plugin/faka-bridge/plan-capacity` |
 | GET  | `/plugin/faka-bridge/plan-catalog` |
+
+`order-revoke`：MoNexus 退款/仲裁后调用，将 `faka_orders` 标为 `revoked`，并对 **plan_id 仍匹配** 的用户执行 `expired_at = now`（升级到其他套餐的用户不会被误过期）。
 
 契约全文：[`docs/monexus-xboard-contract.md`](../../docs/monexus-xboard-contract.md)  
 部署步骤：[`docs/faka-bridge-deploy.md`](../../docs/faka-bridge-deploy.md)

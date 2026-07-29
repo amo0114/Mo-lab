@@ -120,6 +120,10 @@ class FakaOrderService
         /** @var FakaOrder $faka */
         $faka = $claim['order'];
 
+        if ($faka->isRevoked()) {
+            throw new ApiException('订单已撤销，不可重新开通');
+        }
+
         if ($claim['mode'] === 'existing' && !$faka->canResume()) {
             return $this->successPayload($faka, '订单已处理,请勿重复回调');
         }
@@ -581,6 +585,90 @@ class FakaOrderService
         }
 
         return ['plans' => $items];
+    }
+
+    /**
+     * Revoke a FakaBridge provision after MoNexus refund / admin action.
+     * Best-effort: expire matching Xboard user subscription; mark faka_orders revoked.
+     * Idempotent on external_order_no.
+     *
+     * @return array{
+     *   order_no: string,
+     *   status: string,
+     *   trade_no: ?string,
+     *   expired_user: bool,
+     *   message: string
+     * }
+     */
+    public function revokeOrder(string $externalOrderNo, ?string $reason = null): array
+    {
+        $externalOrderNo = trim($externalOrderNo);
+        if ($externalOrderNo === '') {
+            throw new ApiException('缺少必要参数: order_no');
+        }
+
+        /** @var FakaOrder|null $faka */
+        $faka = FakaOrder::where('external_order_no', $externalOrderNo)->first();
+        if (!$faka) {
+            throw new ApiException('订单不存在');
+        }
+
+        if ($faka->status === FakaOrder::STATUS_REVOKED) {
+            return [
+                'order_no' => $faka->external_order_no,
+                'status' => FakaOrder::STATUS_REVOKED,
+                'trade_no' => $faka->xboard_trade_no,
+                'expired_user' => false,
+                'message' => '订单已撤销，请勿重复回调',
+            ];
+        }
+
+        $expiredUser = false;
+        $reasonText = $reason !== null && $reason !== ''
+            ? mb_substr($reason, 0, 500)
+            : 'MoNexus refund/revoke';
+
+        // Expire active subscription only when plan_id still matches this provision.
+        // Avoid nuking a user who already upgraded to a different plan.
+        if (!empty($faka->email) && $faka->plan_id) {
+            $user = User::where('email', strtolower(trim($faka->email)))->first();
+            if ($user && (int) $user->plan_id === (int) $faka->plan_id) {
+                $stillActive = $user->expired_at === null || (int) $user->expired_at > time();
+                if ($stillActive) {
+                    $user->expired_at = time() - 1;
+                    // Capacity counts active users via expired_at; clearing transfer is optional.
+                    $user->save();
+                    $expiredUser = true;
+                    Log::info('[FakaBridge] 已过期用户订阅(revoke)', [
+                        'external_order_no' => $externalOrderNo,
+                        'user_id' => $user->id,
+                        'plan_id' => $faka->plan_id,
+                    ]);
+                }
+            }
+        }
+
+        $faka->update([
+            'status' => FakaOrder::STATUS_REVOKED,
+            'error_log' => mb_substr('[revoked] ' . $reasonText, 0, 2000),
+            'completed_at' => $faka->completed_at ?? now(),
+        ]);
+
+        Log::info('[FakaBridge] 订单已撤销', [
+            'external_order_no' => $externalOrderNo,
+            'expired_user' => $expiredUser,
+            'trade_no' => $faka->xboard_trade_no,
+        ]);
+
+        return [
+            'order_no' => $faka->external_order_no,
+            'status' => FakaOrder::STATUS_REVOKED,
+            'trade_no' => $faka->xboard_trade_no,
+            'expired_user' => $expiredUser,
+            'message' => $expiredUser
+                ? '已撤销开通并过期对应订阅'
+                : '已标记撤销（无需或未能过期用户订阅）',
+        ];
     }
 
     /**
