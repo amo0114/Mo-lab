@@ -477,6 +477,111 @@ class FakaOrderService
     }
 
     /**
+     * Set Xboard plan capacity_limit (null = unlimited).
+     * Only reachable via signed FakaBridge secret (MoNexus platform admin).
+     *
+     * @return array same shape as getPlanCapacity after write
+     */
+    public function setPlanCapacity(string $sku, ?int $capacityLimit, string $period = 'monthly'): array
+    {
+        $sku = strtolower(trim($sku));
+        $mapping = $this->resolveSku($sku, $period);
+        $planId = $mapping['plan_id'];
+
+        $plan = Plan::find($planId);
+        if (!$plan) {
+            throw new ApiException("套餐不存在 (plan_id={$planId})");
+        }
+
+        if ($capacityLimit !== null) {
+            if ($capacityLimit < 0) {
+                throw new ApiException('capacity_limit 不能为负数');
+            }
+            // Soft cap to avoid accidental huge writes
+            if ($capacityLimit > 1_000_000) {
+                throw new ApiException('capacity_limit 过大');
+            }
+        }
+
+        $plan->capacity_limit = $capacityLimit;
+        if (!$plan->save()) {
+            throw new ApiException('保存套餐人数限制失败');
+        }
+
+        Log::info('[FakaBridge] capacity_limit 已更新', [
+            'sku' => $sku,
+            'plan_id' => $planId,
+            'capacity_limit' => $capacityLimit,
+        ]);
+
+        return $this->getPlanCapacity($sku, $period);
+    }
+
+    /**
+     * Catalog of Xboard plans for MoNexus admin import (HMAC-only).
+     *
+     * @return array{plans: list<array<string, mixed>>}
+     */
+    public function listPlanCatalog(): array
+    {
+        $plans = Plan::query()->orderBy('sort')->orderBy('id')->get();
+        $items = [];
+
+        foreach ($plans as $plan) {
+            $prices = is_array($plan->prices) ? $plan->prices : [];
+            $periods = [];
+            foreach ($prices as $periodKey => $price) {
+                if (!is_numeric($price) || (float) $price <= 0) {
+                    continue;
+                }
+                $periods[] = [
+                    'period' => (string) $periodKey,
+                    'price' => (float) $price,
+                    // Suggested MoNexus externalSku alias
+                    'sku_alias' => 'plan-' . $plan->id . '-' . $periodKey,
+                ];
+            }
+
+            $capacityLimit = $plan->capacity_limit !== null ? (int) $plan->capacity_limit : null;
+            $activeUsers = (int) User::where('plan_id', $plan->id)
+                ->where(function ($query) {
+                    $query->where('expired_at', '>=', time())
+                        ->orWhereNull('expired_at');
+                })
+                ->count();
+            $remaining = $capacityLimit === null ? null : max(0, $capacityLimit - $activeUsers);
+
+            // Prefer named SKU from plugin map when plan_id matches
+            $namedSkus = [];
+            foreach (self::SKU_MAPPING as $skuKey => $map) {
+                if ((int) $map['plan_id'] === (int) $plan->id) {
+                    $namedSkus[] = [
+                        'sku' => $skuKey,
+                        'period' => $map['period'],
+                    ];
+                }
+            }
+
+            $items[] = [
+                'plan_id' => (int) $plan->id,
+                'name' => (string) $plan->name,
+                'show' => (bool) $plan->show,
+                'sell' => (bool) $plan->sell,
+                'renew' => (bool) $plan->renew,
+                'group_id' => $plan->group_id !== null ? (int) $plan->group_id : null,
+                'transfer_enable' => (int) $plan->transfer_enable,
+                'capacity_limit' => $capacityLimit,
+                'active_users' => $activeUsers,
+                'remaining' => $remaining,
+                'periods' => $periods,
+                'named_skus' => $namedSkus,
+            ];
+        }
+
+        return ['plans' => $items];
+    }
+
+    /**
      * @return array{plan_id: int, period: string}
      */
     protected function resolveSku(string $sku, string $period): array

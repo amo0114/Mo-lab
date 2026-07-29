@@ -37,6 +37,8 @@ PluginManager 只挂 `api` 中间件，**不会**自动加 `/api/v1`，路由已
 | POST | `/plugin/faka-bridge/order-paid` |
 | GET  | `/plugin/faka-bridge/order-status` |
 | GET  | `/plugin/faka-bridge/plan-capacity` |
+| POST | `/plugin/faka-bridge/plan-capacity` |
+| GET  | `/plugin/faka-bridge/plan-catalog` |
 
 契约全文：[`docs/monexus-xboard-contract.md`](../../docs/monexus-xboard-contract.md)  
 部署步骤：[`docs/faka-bridge-deploy.md`](../../docs/faka-bridge-deploy.md)
@@ -62,6 +64,12 @@ claim faka_orders (unique)
   → reconcileStatus
   → on error: failed + error_log (claim kept)
 ```
+
+### v1.3.0 plan-capacity 写 + plan-catalog
+
+- `POST /plugin/faka-bridge/plan-capacity`：设置 `capacity_limit`（null=不限）
+- `GET /plugin/faka-bridge/plan-catalog`：套餐目录（导入商品用）
+- 全部 HMAC 密钥鉴权，**仅 MoNexus 平台可调**；买家/商家无此密钥
 
 ### v1.2.0 plan-capacity
 

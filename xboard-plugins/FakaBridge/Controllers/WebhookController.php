@@ -153,6 +153,74 @@ class WebhookController extends Controller
         }
     }
 
+    /**
+     * POST plan-capacity — set capacity_limit (null = unlimited).
+     * Body: sku, capacity_limit (int|null), paid_at, sign.
+     */
+    public function setPlanCapacity(Request $request)
+    {
+        try {
+            $this->verifySignature($request);
+
+            $sku = trim((string) $request->input('sku'));
+            if ($sku === '') {
+                throw new ApiException('缺少必要参数: sku');
+            }
+
+            $rawLimit = $request->input('capacity_limit');
+            $capacityLimit = null;
+            if ($rawLimit !== null && $rawLimit !== '') {
+                if (!is_numeric($rawLimit)) {
+                    throw new ApiException('capacity_limit 必须为整数或 null');
+                }
+                $capacityLimit = (int) $rawLimit;
+            }
+
+            $result = $this->orderService->setPlanCapacity($sku, $capacityLimit);
+
+            return response()->json(array_merge(['success' => true], $result));
+        } catch (ApiException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        } catch (\Throwable $e) {
+            Log::error('[FakaBridge] setPlanCapacity 异常: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => '内部服务错误',
+            ], 500);
+        }
+    }
+
+    /**
+     * GET plan-catalog — list Xboard plans for MoNexus admin import.
+     * Signed query: paid_at + sign.
+     */
+    public function planCatalog(Request $request)
+    {
+        try {
+            $this->verifySignature($request);
+
+            $result = $this->orderService->listPlanCatalog();
+
+            return response()->json(array_merge(['success' => true], $result));
+        } catch (ApiException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        } catch (\Throwable $e) {
+            Log::error('[FakaBridge] planCatalog 异常: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => '内部服务错误',
+            ], 500);
+        }
+    }
+
     protected function verifySignature(Request $request): void
     {
         $this->config->assertReady();
