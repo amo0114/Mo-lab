@@ -565,6 +565,8 @@ class FakaOrderService
             $items[] = [
                 'plan_id' => (int) $plan->id,
                 'name' => (string) $plan->name,
+                // Plan content: HTML/markdown from Xboard admin (套餐介绍)
+                'content' => $plan->content !== null ? (string) $plan->content : null,
                 'show' => (bool) $plan->show,
                 'sell' => (bool) $plan->sell,
                 'renew' => (bool) $plan->renew,

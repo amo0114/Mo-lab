@@ -9,7 +9,7 @@ use Plugin\FakaBridge\Models\FakaOrder;
 class Plugin extends AbstractPlugin
 {
     public const CODE = 'faka_bridge';
-    public const VERSION = '1.3.0';
+    public const VERSION = '1.3.1';
 
     public function boot(): void
     {
