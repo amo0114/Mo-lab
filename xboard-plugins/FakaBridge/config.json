@@ -1,7 +1,7 @@
 {
   "name": "FakaBridge",
   "code": "faka_bridge",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "发卡网(MoNexus)桥接插件 - 积分购买后自动创建/续费 Xboard 订阅",
   "author": "Amo",
   "type": "feature",

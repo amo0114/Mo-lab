@@ -1,8 +1,8 @@
 # MoNexus ↔ Xboard 桥接契约
 
-> **版本**: v1.0.0  
-> **更新**: 2026-07-28  
-> **状态**: 定稿 ✅
+> **版本**: v1.1.0  
+> **更新**: 2026-07-29  
+> **状态**: 定稿 ✅（插件逻辑加固：幂等占坑 / 配置接线 / open.after 时序）
 
 ---
 
@@ -43,7 +43,7 @@ MoNexus 内部积分购买完成后,自动在 Xboard 创建/续费用户订阅�
 
 **触发时机**: MoNexus 内部积分购买订单完成后(积分已扣、商品已锁定)
 
-**Base URL**: `https://monexus.oai-o.com` → `https://aster.snowvictor.com`
+**Base URL**: `https://monexus.oai-o.com` → `https://v.uuwu.de`
 
 **Content-Type**: `application/json`
 
@@ -54,7 +54,7 @@ MoNexus 内部积分购买完成后,自动在 Xboard 创建/续费用户订阅�
 | `order_no` | string | ✅ | MoNexus 订单号,全局唯一,最长 64 字符 |
 | `email` | string | ✅ | 用户邮箱,最长 255 字符 |
 | `sku` | string | ✅ | 商品 SKU,决定套餐和周期 |
-| `period` | string | ❌ | 周期,默认 `monthly` |
+| `period` | string | ❌ | 周期,默认 `monthly`（Xboard 规范 key；legacy `month_price` 等会被服务端规范化） |
 | `paid_at` | int | ❌ | Unix 时间戳(秒),默认当前时间 |
 | `sign` | string | ✅ | HMAC-SHA256 签名,hex 小写 |
 
@@ -114,7 +114,7 @@ const body = {
 };
 const sign = signParams(body, secret);
 
-await fetch('https://aster.snowvictor.com/api/v1/plugin/faka-bridge/order-paid', {
+await fetch('https://v.uuwu.de/api/v1/plugin/faka-bridge/order-paid', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ ...body, sign }),
@@ -255,7 +255,7 @@ MoNexus 侧建议:
 
 ```env
 # 回调地址
-FAKA_BRIDGE_URL=https://aster.snowvictor.com/api/v1/plugin/faka-bridge/order-paid
+FAKA_BRIDGE_URL=https://v.uuwu.de/api/v1/plugin/faka-bridge/order-paid
 
 # 签名密钥(与 Xboard 插件配置一致)
 FAKA_BRIDGE_SECRET=your_shared_secret_here
@@ -291,17 +291,21 @@ MoNexus 调用 FakaBridge 回调
   │
   ▼
 Xboard FakaBridge Plugin:
-  1. 验签(失败则 400)
-  2. 时间戳检查(超时则 400)
-  3. 查 faka_orders 表(已存在则返回幂等结果)
-  4. 按 email 查 User
-     ├── 存在 → 继续
-     └── 不存在 → 创建用户(随机密码,不发送邮件)
-  5. 根据 SKU 查 plan 映射
-  6. 调用 OrderService::createFromRequest() 创建订单
-  7. 调用 OrderService::paid() 标记支付
-  8. 记录到 faka_orders 表
-  9. 返回 { success: true, trade_no, status }
+  1. 验签 + 插件启用/桥接开关/HMAC 密钥检查(失败则 400)
+  2. 时间戳检查(有 paid_at 且偏差过大则 400)
+  3. 校验 email / SKU → plan_id + canonical period
+  4. 占坑 faka_orders(external_order_no UNIQUE)
+     ├── 已存在且 processing/completed → 幂等返回
+     ├── 已存在且 pending/failed 可恢复 → 继续履约
+     └── 并发插入冲突 → 转读已有行
+  5. 行锁后履约:
+     a. 按 email 查/建 User(受 auto_create_user / default_group_id 控制)
+     b. 无 trade_no → createFromRequest → **先写入 xboard_trade_no** → paid()
+     c. 已有 trade_no → 仅 ensurePaid(幂等)
+     d. paid() 内 dispatchSync → open → order.open.after 标 completed
+     e. reconcileStatus 兜底(钩子竞态)
+  6. 失败 → status=failed + error_log(占坑保留,可重试)
+  7. 返回 { success, trade_no, order_no, status, message }
 ```
 
 ---
@@ -329,8 +333,16 @@ Xboard FakaBridge Plugin:
 
 ---
 
-## 8. 参考
+## 8. 部署与运行基准
 
-- Xboard 部署: `https://aster.snowvictor.com`
+- 生产镜像: `ghcr.io/cedar2025/xboard:new`
+- 插件目录: 宿主机 `./plugins/FakaBridge`（code=`faka_bridge`，目录名必须 StudlyCase）
+- 进程: Octane `web` + `horizon`，插件 volume 两边都要挂
+- 详细步骤: [faka-bridge-deploy.md](./faka-bridge-deploy.md)
+
+## 9. 参考
+
+- Xboard 部署: `https://v.uuwu.de`（生产目录 `~/Xboard`，镜像 `ghcr.io/cedar2025/xboard:new`，`127.0.0.1:7001`）
 - MoNexus 部署: `https://monexus.oai-o.com`
+- 上游: [cedar2025/Xboard](https://github.com/cedar2025/Xboard)
 - HMAC 算法: [RFC 2104](https://datatracker.ietf.org/doc/html/rfc2104)
