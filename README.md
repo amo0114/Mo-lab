@@ -25,8 +25,8 @@ Bridge plugin that connects MoNexus (发卡网) to Xboard — when a user purcha
 | Plugin code | `faka_bridge` |
 | Deploy path | `plugins/FakaBridge/` on Xboard host |
 | Image baseline | `ghcr.io/cedar2025/xboard:new` |
-| Callback | `POST /api/v1/plugin/faka-bridge/order-paid` |
-| Status | v1.1.0 logic hardened (idempotent claim / config / open.after); MoNexus client not started |
+| Callback | `POST /plugin/faka-bridge/order-paid` |
+| Status | v1.1.1 production verified on v.uuwu.de (path **without** /api/v1); MoNexus client not started |
 | Docs | [API Contract](docs/monexus-xboard-contract.md) · [Deploy](docs/faka-bridge-deploy.md) · [Plugin README](xboard-plugins/FakaBridge/README.md) |
 
 ## License

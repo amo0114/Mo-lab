@@ -58,7 +58,7 @@ docker compose restart web horizon
 # 目录
 ls "$XBOARD_ROOT/plugins/FakaBridge/Plugin.php"
 
-# 路由（期望含 api/v1/plugin/faka-bridge）
+# 路由（期望含 plugin/faka-bridge（无 /api/v1））
 docker compose exec web php artisan route:list | grep -i faka
 # 或: docker exec xboard-web-1 php artisan route:list | grep -i faka
 
@@ -93,21 +93,24 @@ SHOW TABLES LIKE 'faka_orders';
 公网 HTTPS 域名 **`https://v.uuwu.de`** 需把下列路径转到 `127.0.0.1:7001`，**不要**被站点登录墙拦住：
 
 ```text
-POST /api/v1/plugin/faka-bridge/order-paid
-GET  /api/v1/plugin/faka-bridge/order-status
+POST /plugin/faka-bridge/order-paid
+GET  /plugin/faka-bridge/order-status
 ```
+
+> **生产已验收（2026-07-29）**：正确路径**不带** `/api/v1`。  
+> `https://v.uuwu.de/api/v1/plugin/...` → 404；无前缀路径 → 正常。
 
 冒烟（在能访问域名的机器上，替换 secret / 签名）：
 
 ```bash
 # 先用 order-status 测通鉴权与路由
-curl -sS "https://v.uuwu.de/api/v1/plugin/faka-bridge/order-status?order_no=probe&sign=..."
+curl -sS "https://v.uuwu.de/plugin/faka-bridge/order-status?order_no=probe&sign=..."
 ```
 
 ## 5. 与 MoNexus 对接配置（MoNexus 侧尚未实现时先备好）
 
 ```env
-FAKA_BRIDGE_URL=https://v.uuwu.de/api/v1/plugin/faka-bridge/order-paid
+FAKA_BRIDGE_URL=https://v.uuwu.de/plugin/faka-bridge/order-paid
 FAKA_BRIDGE_SECRET=<与插件 hmac_secret 相同>
 FAKA_BRIDGE_TIMEOUT=5000
 FAKA_BRIDGE_RETRY=3

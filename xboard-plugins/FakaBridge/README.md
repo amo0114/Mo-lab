@@ -34,8 +34,8 @@ PluginManager 只挂 `api` 中间件，**不会**自动加 `/api/v1`，路由已
 
 | 方法 | 路径 |
 |------|------|
-| POST | `/api/v1/plugin/faka-bridge/order-paid` |
-| GET  | `/api/v1/plugin/faka-bridge/order-status` |
+| POST | `/plugin/faka-bridge/order-paid` |
+| GET  | `/plugin/faka-bridge/order-status` |
 
 契约全文：[`docs/monexus-xboard-contract.md`](../../docs/monexus-xboard-contract.md)  
 部署步骤：[`docs/faka-bridge-deploy.md`](../../docs/faka-bridge-deploy.md)

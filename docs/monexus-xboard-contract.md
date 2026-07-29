@@ -1,8 +1,8 @@
 # MoNexus ↔ Xboard 桥接契约
 
-> **版本**: v1.1.0  
+> **版本**: v1.1.1  
 > **更新**: 2026-07-29  
-> **状态**: 定稿 ✅（插件逻辑加固：幂等占坑 / 配置接线 / open.after 时序）
+> **状态**: 生产验收通过 ✅（路径无 `/api/v1`；域名 `v.uuwu.de`）
 
 ---
 
@@ -13,7 +13,7 @@ MoNexus 内部积分购买完成后,自动在 Xboard 创建/续费用户订阅�
 ### 架构
 
 ```
-┌──────────────┐         POST /api/v1/plugin/faka-bridge/order-paid        ┌──────────────┐
+┌──────────────┐         POST /plugin/faka-bridge/order-paid        ┌──────────────┐
 │   MoNexus   │ ────────────────────────────────────────────────────────► │    Xboard    │
 │ (发卡网)    │  ◄──────────────────────────────────────────────────────── │  FakaBridge  │
 │              │        200 { success, trade_no }                          │   (Plugin)   │
@@ -39,7 +39,7 @@ MoNexus 内部积分购买完成后,自动在 Xboard 创建/续费用户订阅�
 
 ## 1. 回调端点
 
-### POST /api/v1/plugin/faka-bridge/order-paid
+### POST /plugin/faka-bridge/order-paid
 
 **触发时机**: MoNexus 内部积分购买订单完成后(积分已扣、商品已锁定)
 
@@ -114,7 +114,7 @@ const body = {
 };
 const sign = signParams(body, secret);
 
-await fetch('https://v.uuwu.de/api/v1/plugin/faka-bridge/order-paid', {
+await fetch('https://v.uuwu.de/plugin/faka-bridge/order-paid', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ ...body, sign }),
@@ -190,7 +190,7 @@ MoNexus 侧建议:
 
 ## 2. 对账查询(可选)
 
-### GET /api/v1/plugin/faka-bridge/order-status
+### GET /plugin/faka-bridge/order-status
 
 用于 MoNexus 主动查询订单状态,例如重试后确认是否已成功。
 
@@ -255,7 +255,7 @@ MoNexus 侧建议:
 
 ```env
 # 回调地址
-FAKA_BRIDGE_URL=https://v.uuwu.de/api/v1/plugin/faka-bridge/order-paid
+FAKA_BRIDGE_URL=https://v.uuwu.de/plugin/faka-bridge/order-paid
 
 # 签名密钥(与 Xboard 插件配置一致)
 FAKA_BRIDGE_SECRET=your_shared_secret_here

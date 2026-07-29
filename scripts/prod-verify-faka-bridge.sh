@@ -110,7 +110,7 @@ echo
 echo "=== 5) 公网域名: $PUBLIC_BASE ==="
 curl -sS -m 15 -o /dev/null -w 'home HTTP %{http_code}\n' "$PUBLIC_BASE/" || echo 'home fail'
 code=$(curl -sS -m 15 -o /tmp/faka_probe_body.txt -w '%{http_code}' \
-  "$PUBLIC_BASE/api/v1/plugin/faka-bridge/order-status?order_no=probe" || echo '000')
+  "$PUBLIC_BASE/plugin/faka-bridge/order-status?order_no=probe" || echo '000')
 echo "order-status(no sign) HTTP $code"
 echo "body: $(head -c 300 /tmp/faka_probe_body.txt 2>/dev/null || true)"
 echo "期望: 插件启用后多为 400 缺签名/签名失败；404=路由未挂；000=网络不通"
@@ -154,7 +154,7 @@ def req(method, url, body=None):
 st = {"order_no": order_no}
 st["sign"] = sign(st)
 q = urllib.parse.urlencode(st)
-code, body = req("GET", f"{base}/api/v1/plugin/faka-bridge/order-status?{q}")
+code, body = req("GET", f"{base}/plugin/faka-bridge/order-status?{q}")
 print(f"order-status signed -> {code} {body[:400]}")
 
 if os.environ.get("DO_PAID_SMOKE", "0") != "1":
@@ -168,9 +168,9 @@ else:
         "paid_at": paid_at,
     }
     body["sign"] = sign(body)
-    code, resp = req("POST", f"{base}/api/v1/plugin/faka-bridge/order-paid", body)
+    code, resp = req("POST", f"{base}/plugin/faka-bridge/order-paid", body)
     print(f"order-paid #1 -> {code} {resp[:500]}")
-    code2, resp2 = req("POST", f"{base}/api/v1/plugin/faka-bridge/order-paid", body)
+    code2, resp2 = req("POST", f"{base}/plugin/faka-bridge/order-paid", body)
     print(f"order-paid #2 idempotent -> {code2} {resp2[:500]}")
 PY
 
