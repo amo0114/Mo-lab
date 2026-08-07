@@ -132,7 +132,8 @@ await fetch('https://v.uuwu.de/plugin/faka-bridge/order-paid', {
   "trade_no": "202607281500001",
   "order_no": "MN-20260728-001",
   "status": "processing",
-  "message": "订单已创建并开始处理"
+  "message": "订单已创建并开始处理",
+  "expired_at": 1791244800
 }
 ```
 
@@ -144,9 +145,16 @@ await fetch('https://v.uuwu.de/plugin/faka-bridge/order-paid', {
   "trade_no": "202607281500001",
   "order_no": "MN-20260728-001",
   "status": "completed",
-  "message": "订单已处理,请勿重复回调"
+  "message": "订单已处理,请勿重复回调",
+  "expired_at": 1791244800
 }
 ```
+
+> **`expired_at`（≥1.4.1）**：Xboard 用户 `expired_at`（Unix 秒）。开通/续费成功后，这是订阅真实到期时刻。  
+> MoNexus 必须用它写入 `DeliveryRecord.expiresAt`，**不要**仅用 `validityDays` 从交付时刻推算——否则 Xboard 侧已按账号剩余时长顺延（如 9.6→10.6），MoNexus 仍显示「交付+30天」（如 9.5），两边不一致。
+>
+> **`action` / `before` / `after` / `subscription`（≥1.5.0）**：开通前后快照，供买家端展示  
+> 「续期前/后到期」「购买前/后剩余流量」。`transfer_enable` / `used` / `remaining` 单位为**字节**。
 
 **签名错误**(HTTP 400):
 
@@ -211,11 +219,13 @@ MoNexus 侧建议:
   "status": "completed",
   "trade_no": "202607281500001",
   "created_at": "2026-07-28T15:00:00Z",
-  "completed_at": "2026-07-28T15:00:05Z"
+  "completed_at": "2026-07-28T15:00:05Z",
+  "expired_at": 1791244800
 }
 ```
 
-`status` 取值: `pending` | `processing` | `completed` | `failed`
+`status` 取值: `pending` | `processing` | `completed` | `failed`  
+`expired_at`（≥1.4.1，可选）：开通邮箱对应 Xboard 用户当前 `expired_at`（Unix 秒）。
 
 ---
 
@@ -306,7 +316,7 @@ Xboard FakaBridge Plugin:
      d. paid() 内 dispatchSync → open → order.open.after 标 completed
      e. reconcileStatus 兜底(钩子竞态)
   6. 失败 → status=failed + error_log(占坑保留,可重试)
-  7. 返回 { success, trade_no, order_no, status, message }
+  7. 返回 { success, trade_no, order_no, status, message, expired_at? }
 ```
 
 ---

@@ -204,7 +204,15 @@ class FakaOrderService
      * trade_no is written before paid() so order.open.after can match the row
      * while dispatchSync(open) still runs inside paid().
      *
-     * @return array{trade_no: ?string, status: string, message: string, order_no: string, resumed?: bool}
+     * @return array{
+     *   trade_no: ?string,
+     *   status: string,
+     *   message: string,
+     *   order_no: string,
+     *   resumed?: bool,
+     *   expired_at?: int|null,
+     *   subscription?: array
+     * }
      */
     protected function fulfill(FakaOrder $faka, Plan $plan, string $mappedPeriod, string $email): array
     {
@@ -216,10 +224,12 @@ class FakaOrderService
             }
 
             if ($locked->isTerminalSuccess()) {
-                return $this->successPayload($locked, '订单已处理,请勿重复回调');
+                return $this->successPayload($locked, '订单已处理,请勿重复回调', false, $mappedPeriod);
             }
 
             $user = $this->findOrCreateUser($email);
+            // Snapshot BEFORE paid/open so MoNexus can show "续期前 / 购买前" to buyers.
+            $before = $this->snapshotUserSubscription($user);
             $resumed = $locked->status !== FakaOrder::STATUS_PENDING
                 || !empty($locked->xboard_trade_no);
 
@@ -231,11 +241,15 @@ class FakaOrderService
 
                 $this->ensurePaid($order, $locked->external_order_no);
                 $this->reconcileStatus($locked, $order);
+                $user->refresh();
 
                 return $this->successPayload(
                     $locked->fresh(),
                     $resumed ? '订单已恢复处理' : '订单已创建并开始处理',
-                    $resumed
+                    $resumed,
+                    $mappedPeriod,
+                    $before,
+                    $this->snapshotUserSubscription($user)
                 );
             }
 
@@ -252,6 +266,7 @@ class FakaOrderService
 
             $this->ensurePaid($order, $locked->external_order_no);
             $this->reconcileStatus($locked, $order);
+            $user->refresh();
 
             $fresh = $locked->fresh();
             Log::info('[FakaBridge] 订单处理成功', [
@@ -269,7 +284,10 @@ class FakaOrderService
                 $fresh->status === FakaOrder::STATUS_COMPLETED
                     ? '订单已创建并开通完成'
                     : '订单已创建并开始处理',
-                $resumed
+                $resumed,
+                $mappedPeriod,
+                $before,
+                $this->snapshotUserSubscription($user)
             );
         });
     }
@@ -398,10 +416,30 @@ class FakaOrderService
     }
 
     /**
-     * @return array{trade_no: ?string, status: string, message: string, order_no: string, resumed?: bool}
+     * @param array<string, mixed>|null $before Snapshot before paid/open
+     * @param array<string, mixed>|null $after Snapshot after paid/open
+     * @return array{
+     *   trade_no: ?string,
+     *   status: string,
+     *   message: string,
+     *   order_no: string,
+     *   resumed?: bool,
+     *   expired_at?: int|null,
+     *   period?: string,
+     *   action?: string,
+     *   before?: array,
+     *   after?: array,
+     *   subscription?: array
+     * }
      */
-    protected function successPayload(FakaOrder $faka, string $message, bool $resumed = false): array
-    {
+    protected function successPayload(
+        FakaOrder $faka,
+        string $message,
+        bool $resumed = false,
+        ?string $period = null,
+        ?array $before = null,
+        ?array $after = null
+    ): array {
         $payload = [
             'trade_no' => $faka->xboard_trade_no,
             'status' => $faka->status,
@@ -412,7 +450,134 @@ class FakaOrderService
             $payload['resumed'] = true;
         }
 
+        $period = $period ?? ($faka->period ?: null);
+        if ($after === null) {
+            $after = $this->snapshotUserByEmail($faka->email);
+        }
+        if ($before === null) {
+            // Idempotent replay: before is unknown; still expose current (after) state.
+            $before = $after;
+        }
+
+        // Ground truth for MoNexus DeliveryRecord.expiresAt: Xboard user.expired_at
+        // (unix seconds). MoNexus must not re-project period with validityDays alone —
+        // renewals and remaining time live on this field after paid()/open().
+        $expiredAt = isset($after['expired_at']) ? $after['expired_at'] : $this->resolveUserExpiredAt($faka->email);
+        if ($expiredAt !== null) {
+            $payload['expired_at'] = $expiredAt;
+        }
+
+        $action = $this->inferSubscriptionAction($period, $before, $after);
+        $payload['period'] = $period;
+        $payload['action'] = $action;
+        $payload['before'] = $before;
+        $payload['after'] = $after;
+        // Nested block for MoNexus structured delivery / success UI.
+        $payload['subscription'] = [
+            'action' => $action,
+            'period' => $period,
+            'before' => $before,
+            'after' => $after,
+        ];
+
         return $payload;
+    }
+
+    /**
+     * @return array{
+     *   expired_at: int|null,
+     *   transfer_enable: int,
+     *   u: int,
+     *   d: int,
+     *   used: int,
+     *   remaining: int,
+     *   plan_id: int|null
+     * }
+     */
+    public function snapshotUserSubscription(User $user): array
+    {
+        $transfer = (int) ($user->transfer_enable ?? 0);
+        $up = (int) ($user->u ?? 0);
+        $down = (int) ($user->d ?? 0);
+        $used = max(0, $up + $down);
+        $expiredRaw = $user->expired_at;
+        $expiredAt = null;
+        if ($expiredRaw !== null && $expiredRaw !== '') {
+            $ts = (int) $expiredRaw;
+            // NULL/0 often means unlimited time on Xboard onetime traffic packs.
+            $expiredAt = $ts > 0 ? $ts : null;
+        }
+
+        return [
+            'expired_at' => $expiredAt,
+            'transfer_enable' => $transfer,
+            'u' => $up,
+            'd' => $down,
+            'used' => $used,
+            'remaining' => max(0, $transfer - $used),
+            'plan_id' => $user->plan_id !== null ? (int) $user->plan_id : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function snapshotUserByEmail(?string $email): ?array
+    {
+        $email = strtolower(trim((string) $email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        $user = User::where('email', $email)->first();
+        if (!$user) {
+            return null;
+        }
+
+        return $this->snapshotUserSubscription($user);
+    }
+
+    /**
+     * @param array<string, mixed>|null $before
+     * @param array<string, mixed>|null $after
+     */
+    protected function inferSubscriptionAction(?string $period, ?array $before, ?array $after): string
+    {
+        $period = strtolower(trim((string) $period));
+        if ($period === 'reset_traffic') {
+            return 'reset_traffic';
+        }
+        if ($period === 'onetime') {
+            return 'onetime';
+        }
+
+        $beforeExp = isset($before['expired_at']) ? $before['expired_at'] : null;
+        $afterExp = isset($after['expired_at']) ? $after['expired_at'] : null;
+        $now = time();
+
+        if ($beforeExp !== null && (int) $beforeExp > $now
+            && $afterExp !== null && (int) $afterExp > (int) $beforeExp) {
+            return 'renew';
+        }
+        if ($beforeExp === null || (int) $beforeExp <= $now) {
+            return 'new';
+        }
+
+        return 'renew';
+    }
+
+    /**
+     * Look up Xboard user subscription end for a provision email.
+     *
+     * @return int|null Unix seconds, or null when unknown / unset
+     */
+    public function resolveUserExpiredAt(?string $email): ?int
+    {
+        $snap = $this->snapshotUserByEmail($email);
+        if ($snap === null) {
+            return null;
+        }
+
+        return $snap['expired_at'] ?? null;
     }
 
     /**

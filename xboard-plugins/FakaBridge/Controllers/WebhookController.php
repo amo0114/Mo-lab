@@ -50,13 +50,25 @@ class WebhookController extends Controller
                 $paidAt !== null && $paidAt !== '' ? (int) $paidAt : null
             );
 
-            return response()->json([
+            $json = [
                 'success' => true,
                 'trade_no' => $result['trade_no'],
                 'order_no' => $result['order_no'],
                 'status' => $result['status'],
                 'message' => $result['message'],
-            ]);
+            ];
+            // Optional: MoNexus writes DeliveryRecord.expiresAt from this (unix seconds).
+            if (array_key_exists('expired_at', $result) && $result['expired_at'] !== null) {
+                $json['expired_at'] = (int) $result['expired_at'];
+            }
+            // Buyer-facing before/after (expiry + traffic) for MoNexus success UI.
+            foreach (['period', 'action', 'before', 'after', 'subscription'] as $key) {
+                if (array_key_exists($key, $result) && $result[$key] !== null) {
+                    $json[$key] = $result[$key];
+                }
+            }
+
+            return response()->json($json);
         } catch (ApiException $e) {
             Log::warning('[FakaBridge] 业务异常: ' . $e->getMessage());
 
@@ -95,7 +107,7 @@ class WebhookController extends Controller
                 ], 404);
             }
 
-            return response()->json([
+            $json = [
                 'success' => true,
                 'order_no' => $fakaOrder->external_order_no,
                 'status' => $fakaOrder->status,
@@ -108,7 +120,24 @@ class WebhookController extends Controller
                 ], true)
                     ? $fakaOrder->error_log
                     : null,
-            ]);
+            ];
+            $after = $this->orderService->snapshotUserByEmail($fakaOrder->email);
+            if ($after !== null) {
+                if ($after['expired_at'] !== null) {
+                    $json['expired_at'] = (int) $after['expired_at'];
+                }
+                $json['period'] = $fakaOrder->period;
+                $json['after'] = $after;
+                // Status probe has no true "before"; expose after only for align/repair.
+                $json['subscription'] = [
+                    'action' => null,
+                    'period' => $fakaOrder->period,
+                    'before' => null,
+                    'after' => $after,
+                ];
+            }
+
+            return response()->json($json);
         } catch (ApiException $e) {
             return response()->json([
                 'success' => false,
