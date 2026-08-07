@@ -56,6 +56,26 @@ PluginManager 只挂 `api` 中间件，**不会**自动加 `/api/v1`，路由已
 
 回调默认 `period=monthly`。命名 SKU（如 `aster-basic-monthly`）以 `SKU_MAPPING` 为准，忽略请求体中的 period。
 
+## v1.5.0 订阅前后快照 + expired_at
+
+`order-paid` 成功响应（≥1.5.0）：
+
+| 字段 | 说明 |
+|------|------|
+| `expired_at` | 开通后 Xboard `user.expired_at`（Unix 秒） |
+| `action` | `new` / `renew` / `onetime` / `reset_traffic` |
+| `period` | 周期 key |
+| `before` / `after` | `{ expired_at, transfer_enable, u, d, used, remaining, plan_id }`（流量单位：字节） |
+| `subscription` | 嵌套同上，便于 MoNexus 一次解析 |
+
+MoNexus 用其展示「续期前/后到期」「购买前/后剩余流量」，并写入 `DeliveryRecord.expiresAt`。
+
+## v1.4.1 expired_at 回传
+
+`order-paid` / `order-status` 成功响应增加可选字段 `expired_at`（Unix 秒）=
+Xboard 用户 `expired_at`。MoNexus 用它写入订单 `DeliveryRecord.expiresAt`，
+与面板真实到期对齐（续费/剩余时长不再被本地 `validityDays` 误推成「下单日 + N 天」）。
+
 ## 逻辑加固（v1.1.x）
 
 ```text

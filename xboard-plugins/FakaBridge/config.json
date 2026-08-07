@@ -1,8 +1,8 @@
 {
   "name": "FakaBridge",
   "code": "faka_bridge",
-  "version": "1.4.0",
-  "description": "发卡网(MoNexus)桥接插件 - 开通/名额/目录/退款撤销 Xboard 订阅",
+  "version": "1.5.0",
+  "description": "发卡网(MoNexus)桥接插件 - 开通/名额/目录/退款撤销；回传 expired_at 与 before/after 订阅流量快照",
   "author": "Amo",
   "type": "feature",
   "require": {
