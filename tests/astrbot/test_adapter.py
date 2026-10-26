@@ -44,6 +44,8 @@ PROFILE = {
         "consumed": 0,
         "status": "active",
     },
+    "canFreeReset": True,
+    "blockReason": None,
     "resetHistory": {
         "freeSuccessfulForAccount": 0,
         "platformSuccessfulForAccount": None,
@@ -285,13 +287,64 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         self.assertIn("站内完成 QQ 绑定", result)
         self.assertIn("无需重新绑定", result)
 
-    async def test_counts_do_not_confuse_native_or_paid_history_with_free_success(self):
+    async def test_counts_show_available_opportunity_without_internal_history(self):
         result = await self.call("counts")
         self.assertIn("可用 1 次", result)
-        self.assertIn("免费成功记录：0 次", result)
-        self.assertIn("全来源重置：9 次", result)
-        self.assertIn("付费重置历史：暂未纳入", result)
-        self.assertNotIn("免费成功记录：9", result)
+        self.assertIn("发送“重置流量”", result)
+        for term in ["Xboard", "v2", "成功记录", "全来源", "9 次", "退款"]:
+            self.assertNotIn(term, result)
+        profile = await self.call("profile")
+        self.assertIn("50.00 GiB", profile)
+        self.assertNotIn("全来源", profile)
+        self.assertNotIn("v2", profile)
+
+    async def test_counts_respect_local_and_backend_execution_gates(self):
+        self.commands.reset_enabled = False
+        result = await self.call("counts")
+        self.assertIn("可用 1 次", result)
+        self.assertIn("未开放，次数会保留", result)
+        self.assertNotIn("发送“重置流量”", result)
+        self.commands.reset_enabled = True
+        body = clone(PROFILE)
+        body.update(canFreeReset=False, blockReason="RESET_FEATURE_NOT_ENABLED")
+        self.wire.outcomes = [httpx.Response(200, json=body)]
+        self.assertIn("未开放，次数会保留", await self.call("counts"))
+
+    async def test_counts_distinguish_missing_pending_processing_and_used(self):
+        for free, expected, forbidden in [
+            (None, "尚未发放", "剩余 0 次"),
+            ({"status": "pending_verification", "available": 0}, "资格待确认", "剩余 0 次"),
+            ({"status": "revoked", "available": 0}, "当前不可用", "赠送机会已使用"),
+            ({"available": 0, "reserved": 1}, "1 次处理中", "购买重置"),
+            ({"available": 0, "consumed": 1}, "剩余 0 次", "发送“重置流量”"),
+        ]:
+            with self.subTest(free=free):
+                body = clone(PROFILE)
+                if free is None:
+                    body["freeReset"] = None
+                else:
+                    body["freeReset"].update(free)
+                self.wire.outcomes = [httpx.Response(200, json=body)]
+                result = await self.call("counts")
+                self.assertIn(expected, result)
+                self.assertNotIn(forbidden, result)
+                self.assertNotIn("Xboard", result)
+                self.assertNotIn("v2", result)
+        body = clone(PROFILE)
+        body["freeReset"].update(available=0, consumed=1)
+        self.wire.outcomes = [httpx.Response(200, json=body)]
+        self.assertIn("购买入口暂未开放", await self.call("counts"))
+        self.commands.purchase_enabled = True
+        self.wire.outcomes = [httpx.Response(200, json=body)]
+        self.assertIn("发送“购买重置”查看价格", await self.call("counts"))
+
+    async def test_empty_accounts_gives_order_guidance_without_claiming_sync(self):
+        self.wire.outcomes = [httpx.Response(200, json={"bound": True, "accounts": []})]
+        result = await self.call("accounts")
+        self.assertIn("暂未找到已购买", result)
+        self.assertIn("下单时的 MoNexus 账号", result)
+        self.assertNotIn("正在同步", result)
+        self.assertNotIn("Xboard", result)
 
     async def test_unavailable_traffic_is_unknown_and_stale_is_labelled(self):
         body = clone(PROFILE)
@@ -300,7 +353,7 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         self.wire.outcomes = [httpx.Response(200, json=body)]
         result = await self.call("profile")
         self.assertIn("暂时查询不到", result)
-        self.assertIn("缓存", result)
+        self.assertIn("上次查询结果", result)
         self.assertNotIn("0.00 GiB", result)
 
     async def test_account_selection_uses_the_shown_list_and_preserves_intent_target(
@@ -524,7 +577,7 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
             )
         ]
         result = await self.call("profile")
-        self.assertIn("关联", result)
+        self.assertIn("核对订单", result)
         self.assertNotIn("private", result)
         self.wire.outcomes = [
             httpx.Response(200, json={"bound": True, "status": "succeeded"})
@@ -665,9 +718,7 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
             self.wire.outcomes = [httpx.Response(200, json=body)]
             self.assertNotIn("免费重置：可用", await self.call("counts"))
 
-    async def test_paid_v2_counts_show_coverage_and_refund_execution_separately_from_free(
-        self,
-    ):
+    async def test_history_is_still_validated_but_not_shown_as_a_balance(self):
         body = clone(PROFILE)
         body["resetHistory"].update(
             paidSuccessfulForAccount=2,
@@ -678,16 +729,14 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         self.wire.outcomes = [httpx.Response(200, json=body)]
         result = await self.call("counts")
         self.assertIn("可用 1 次", result)
-        self.assertIn("付费成功记录：2 次", result)
-        self.assertIn("本平台已核实重置：2 次", result)
-        self.assertIn("旧版付费与站外记录未计入", result)
-        self.assertIn("执行后退款仍保留", result)
+        for term in ["2 次", "已核实", "付费成功", "v2", "Xboard", "退款"]:
+            self.assertNotIn(term, result)
         body["resetHistory"]["truncated"] = True
         self.wire.outcomes = [httpx.Response(200, json=body)]
-        self.assertIn("至少 2 次", await self.call("counts"))
+        self.assertEqual(result, await self.call("counts"))
         body["resetHistory"]["platformSuccessfulForAccount"] = 3
         self.wire.outcomes = [httpx.Response(200, json=body)]
-        self.assertNotIn("成功记录", await self.call("counts"))
+        self.assertIn("服务暂时不可用", await self.call("counts"))
 
     async def test_local_storage_failure_blocks_before_confirmation_dispatch(self):
         await self.call("reset")

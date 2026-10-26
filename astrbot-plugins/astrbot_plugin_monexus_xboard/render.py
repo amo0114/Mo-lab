@@ -43,43 +43,11 @@ def expiry(value):
         return "未知"
 
 
-def counts(profile):
-    free = profile.get("freeReset")
-    if free is None:
-        result = ["免费重置：暂未发放或资格待同步"]
-    elif (
-        isinstance(free, dict)
-        and type(free.get("granted")) is int
-        and free["granted"] == 1
-        and all(
-            type(free.get(k)) is int and 0 <= free[k] <= 1
-            for k in ["available", "reserved", "consumed"]
-        )
-        and free["reserved"] + free["consumed"] <= free["granted"]
-        and free.get("status") in {"active", "pending_verification", "revoked"}
-        and free["available"]
-        == (
-            free["granted"] - free["reserved"] - free["consumed"]
-            if free["status"] == "active"
-            else 0
-        )
-    ):
-        result = [
-            f"免费重置：可用 {free['available']} 次，处理中 {free['reserved']} 次，已用 {free['consumed']} 次"
-        ]
-        if free.get("status") == "pending_verification":
-            result.append("购买关联正在同步，暂不能使用。")
-        elif free.get("status") == "revoked":
-            result.append("当前赠送资格不可用。")
-    else:
-        raise BotError("INVALID_RESPONSE")
+def _validate_reset_history(profile):
+    # Keep contract validation; purchase/automatic-reset counters are not a
+    # balance and must not appear as usable opportunities in user replies.
     history = profile.get("resetHistory", {})
     successful = history.get("freeSuccessfulForAccount")
-    result.append(
-        f"当前账号免费成功记录：{successful} 次"
-        if type(successful) is int and successful >= 0
-        else "当前账号免费成功记录：暂无统计覆盖"
-    )
     if history.get("coverageScope") == "verified_v2_only":
         paid, total = (
             history.get("paidSuccessfulForAccount"),
@@ -96,28 +64,63 @@ def counts(profile):
             or type(history.get("truncated")) is not bool
         ):
             raise BotError("INVALID_RESPONSE")
-        prefix = "至少 " if history["truncated"] else ""
-        result.append(f"当前账号付费成功记录：{prefix}{paid} 次")
-        result.append(f"本平台已核实重置：{prefix}{total} 次")
-        result.append(
-            "仅统计免费及付费 v2 执行记录；旧版付费与站外记录未计入，执行后退款仍保留次数。"
-        )
-        if history["truncated"]:
-            result.append("付费记录仅核对最近 1000 条，以上为已核实下限。")
-    elif (
+    elif not (
         history.get("coverageScope") == "free_reset_v2_only"
         and history.get("platformSuccessfulForAccount") is None
     ):
-        result.append("付费重置历史：暂未纳入统计")
-    else:
         raise BotError("INVALID_RESPONSE")
-    native = history.get("xboardAllSources")
-    if isinstance(native, str) and re.fullmatch(r"[0-9]{1,40}", native):
-        result.append(f"Xboard 全来源重置：{native} 次（包含自动周期等）")
+
+
+def counts(profile, *, reset_enabled=False, purchase_enabled=False):
+    _validate_reset_history(profile)
+    free = profile.get("freeReset")
+    if free is None:
+        result = ["免费重置：尚未发放。", "每位符合条件的套餐购买用户可获赠 1 次。"]
+        if not reset_enabled or profile.get("blockReason") == "RESET_FEATURE_NOT_ENABLED":
+            result.append("免费重置暂未开放。")
+        return "\n".join(result)
+    if not (
+        isinstance(free, dict)
+        and type(free.get("granted")) is int
+        and free["granted"] == 1
+        and all(
+            type(free.get(k)) is int and 0 <= free[k] <= 1
+            for k in ["available", "reserved", "consumed"]
+        )
+        and free["reserved"] + free["consumed"] <= free["granted"]
+        and free.get("status") in {"active", "pending_verification", "revoked"}
+        and free["available"]
+        == (
+            free["granted"] - free["reserved"] - free["consumed"]
+            if free["status"] == "active"
+            else 0
+        )
+    ):
+        raise BotError("INVALID_RESPONSE")
+    if free["reserved"]:
+        return "免费重置：1 次处理中。\n发送“重置进度”查看结果，请勿重复操作。"
+    if free["consumed"]:
+        next_step = (
+            "再次重置需购买，发送“购买重置”查看价格。"
+            if purchase_enabled
+            else "再次重置需购买，购买入口暂未开放。"
+        )
+        return "免费重置：剩余 0 次（赠送机会已使用）。\n" + next_step
+    if free["status"] == "pending_verification":
+        return "免费重置：资格待确认，暂不可用。\n如已购买套餐，请稍后查询或联系站点客服核对。"
+    if free["status"] == "revoked":
+        return "免费重置：当前不可用。\n请联系站点客服核对套餐资格。"
+    result = [f"免费重置：可用 {free['available']} 次（每人限赠一次，多账号共享）。"]
+    if not reset_enabled or profile.get("blockReason") == "RESET_FEATURE_NOT_ENABLED":
+        result.append("免费重置暂未开放，次数会保留。")
+    elif profile.get("canFreeReset") is True:
+        result.append("发送“重置流量”使用，确认后才会执行。")
+    else:
+        result.append("当前暂不能使用，请稍后重试或联系站点客服核对套餐状态。")
     return "\n".join(result)
 
 
-def profile_text(profile):
+def profile_text(profile, *, reset_enabled=False, purchase_enabled=False):
     account = profile.get("account")
     freshness = profile.get("freshness")
     if not isinstance(account, dict) or not isinstance(freshness, dict):
@@ -140,11 +143,13 @@ def profile_text(profile):
                 f"到期：{expiry(sub.get('expiresAtUnix'))}",
             ]
         )
-    result.append(counts(profile))
+    result.append(
+        counts(profile, reset_enabled=reset_enabled, purchase_enabled=purchase_enabled)
+    )
     if freshness.get("stale") or freshness.get("unavailable"):
-        result.append("当前查询服务异常；以上可能是缓存数据，不能作为执行依据。")
+        result.append("当前显示的是上次查询结果，请稍后再查最新流量。")
     result.append("查询时间：" + text(freshness.get("queriedAt") or "未知"))
-    result.append("流量以面板记录为准，节点上报可能有延迟。")
+    result.append("流量更新可能稍有延迟。")
     return "\n".join(result)
 
 
@@ -163,7 +168,7 @@ def error_text(error):
         "XBOARD_PAID_RESET_UNAVAILABLE": "付费重置购买暂未开放，请稍后再试。",
         "CHECKOUT_CHANGED": "套餐账号或商品已变化，请重新查询后购买。",
         "XBOARD_ACCOUNT_SELECTION_REQUIRED": "有多个套餐账号，请先发送“我的账号”，再发送“切换套餐账号 序号”。",
-        "XBOARD_ACCOUNT_UNRESOLVED": "购买账号关联尚未同步或需要核验，请稍后查询或联系站点客服。",
+        "XBOARD_ACCOUNT_UNRESOLVED": "暂未找到可用的套餐账号。如已购买套餐，请联系站点客服核对订单，无需重新绑定套餐邮箱。",
         "XBOARD_BINDING_CHANGED": "QQ 绑定或账号状态已变化，请先在站内确认绑定后重新查询。",
         "TRAFFIC_RESET_INELIGIBLE": "当前没有可用赠送机会，或套餐暂不符合重置条件。请先查流量和重置次数。",
         "TRAFFIC_RESET_CONFIRMATION_INVALID": "确认码有误或尝试次数过多，请检查原确认码；必要时重新发起。",

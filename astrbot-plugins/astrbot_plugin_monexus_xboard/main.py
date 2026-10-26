@@ -12,7 +12,7 @@ from .state import StateStore
 
 
 @register(
-    "astrbot_plugin_monexus_xboard", "MoNexus", "查询套餐及一次赠送流量重置", "0.2.0"
+    "astrbot_plugin_monexus_xboard", "MoNexus", "查询套餐及一次赠送流量重置", "0.2.1"
 )
 class MonexusXboard(Star):
     def __init__(self, context: Context, config: AstrBotConfig):

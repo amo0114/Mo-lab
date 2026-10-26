@@ -13,7 +13,7 @@ from .render import counts, error_text, operation_text, profile_text, text
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 PRIVATE_HINT = "请主动私聊机器人后使用此命令，套餐详情和重置确认只在私聊中处理。"
-UNBOUND = "请先登录 MoNexus，在站内完成 QQ 绑定；无需重新绑定已购买套餐的 Xboard 邮箱。"
+UNBOUND = "请先登录 MoNexus，在站内完成 QQ 绑定；无需重新绑定已购买套餐的邮箱。"
 
 
 def checked_uuid(value):
@@ -133,7 +133,7 @@ class Commands:
             await self.store.write(key, state)
             if not rows:
                 return (
-                    "购买账号正在同步，请稍后重试；已有订单无需重新绑定 Xboard 邮箱。"
+                    "暂未找到已购买的套餐账号。若已购买，请确认当前 QQ 绑定的是下单时的 MoNexus 账号，或联系站点客服核对订单；无需重新绑定套餐邮箱。"
                 )
             if result.get("truncated"):
                 lines.append("账号较多，仅显示部分；其余请联系站点客服。")
@@ -164,7 +164,12 @@ class Commands:
             return await self._apply_selection(sender, key, state, pending)
         if action in {"profile", "counts"}:
             result = await self._profile(sender, key)
-            return profile_text(result) if action == "profile" else counts(result)
+            render = profile_text if action == "profile" else counts
+            return render(
+                result,
+                reset_enabled=self.reset_enabled,
+                purchase_enabled=self.purchase_enabled,
+            )
         if action == "purchase":
             if not self.purchase_enabled:
                 return "当前套餐的重置购买入口暂未开放，请联系站点客服。"
