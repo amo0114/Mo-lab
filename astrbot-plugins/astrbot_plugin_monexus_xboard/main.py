@@ -1,6 +1,9 @@
 """AstrBot + NapCat entry point. Commands never take a QQ number argument."""
 
+import re
 from pathlib import Path
+
+import astrbot.api.message_components as Comp
 
 from astrbot.api import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
@@ -12,7 +15,7 @@ from .state import StateStore
 
 
 @register(
-    "astrbot_plugin_monexus_xboard", "MoNexus", "查询套餐及一次赠送流量重置", "0.2.1"
+    "astrbot_plugin_monexus_xboard", "MoNexus", "查询套餐及一次赠送流量重置", "0.3.0"
 )
 class MonexusXboard(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -39,6 +42,7 @@ class MonexusXboard(Star):
                 self.client,
                 self.store,
                 queries_enabled=True,
+                group_enabled=self.config.get("group_commands_enabled") is True,
                 reset_enabled=self.config.get("free_reset_enabled") is True,
                 purchase_enabled=self.config.get("paid_reset_purchase_enabled") is True,
             )
@@ -56,14 +60,15 @@ class MonexusXboard(Star):
 
     async def _run(self, event, action, argument=""):
         event.stop_event()
-        # Fail closed before touching the client or state in group contexts.
-        if event.get_group_id():
+        group = bool(event.get_group_id())
+        if group and self.config.get("group_commands_enabled") is not True:
             return event.plain_result(PRIVATE_HINT)
         if not self.commands:
             return event.plain_result("套餐查询暂未开放。")
-        response = await self.commands.handle(
-            str(event.get_sender_id()), True, action, argument
-        )
+        sender = str(event.get_sender_id())
+        response = await self.commands.handle(sender, not group, action, argument)
+        if group and re.fullmatch(r"[1-9][0-9]{4,19}", sender):
+            return event.chain_result([Comp.At(qq=sender), Comp.Plain("\n" + response)])
         return event.plain_result(response)
 
     @filter.command("我的套餐", alias={"查流量"})
