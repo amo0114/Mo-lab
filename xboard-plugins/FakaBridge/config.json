@@ -1,7 +1,7 @@
 {
   "name": "FakaBridge",
   "code": "faka_bridge",
-  "version": "1.5.0",
+  "version": "1.8.0",
   "description": "发卡网(MoNexus)桥接插件 - 开通/名额/目录/退款撤销；回传 expired_at 与 before/after 订阅流量快照",
   "author": "Amo",
   "type": "feature",
@@ -9,6 +9,18 @@
     "xboard": ">=1.0.0"
   },
   "config": {
+    "v2_paid_reset_enabled": {
+      "type": "boolean",
+      "default": false,
+      "label": "启用稳定账号付费重置",
+      "description": "仅当前有效套餐的 reset_traffic 商业单；需核心补丁及迁移。关闭后仍可核对和撤销，撤销不会停用原套餐。"
+    },
+    "v2_read_enabled": {
+      "type": "boolean",
+      "default": false,
+      "label": "启用 v2 账号查询",
+      "description": "验证迁移、核心版本及 MoNexus 接入后启用；不开放免费重置"
+    },
     "enabled": {
       "type": "boolean",
       "default": true,
@@ -38,6 +50,24 @@
       "default": "",
       "label": "默认权限组ID",
       "description": "自动创建用户时的默认权限组，可留空"
+    },
+    "v2_reset_enabled": {
+      "type": "boolean",
+      "default": false,
+      "label": "启用免费重置执行",
+      "description": "必须先安装经过核验的核心兼容补丁与迁移；关闭不妨碍状态核对/执行前取消。"
+    },
+    "v2_client_id": {
+      "type": "string",
+      "default": "monexus",
+      "label": "稳定调用方 ID",
+      "description": "不可随意修改；所有密钥轮换共用同一个 ID，避免绕过终身限制。"
+    },
+    "v2_reset_plan_ids": {
+      "type": "string",
+      "default": "",
+      "label": "允许赠送重置的套餐 ID",
+      "description": "英文逗号分隔正整数；缺省不开放任何套餐。"
     }
   }
 }

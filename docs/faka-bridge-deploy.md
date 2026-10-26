@@ -1,5 +1,7 @@
 # FakaBridge 生产部署说明
 
+> 下文保留旧版 v1 操作背景。1.8.0 的稳定账号查询、赠送及付费重置发布，请改按 [固定构建说明](../release/xboard-reset/README.md) 和 [实际部署核对与发布步骤](https://github.com/amo0114/MoNexus/blob/feat/performance-qq-xboard-20261025/docs/specs/2026-10-25-performance-and-qq-xboard/production-readiness.md)。本次已实证线上存在宿主机插件挂载；仅复制插件再 restart 或继续使用未补丁核心，不满足 v2 发布条件。升级须执行新增迁移并共同重建 web/horizon，不卸载插件。
+
 > 基准：生产 Docker Compose（`ghcr.io/cedar2025/xboard:new` + Octane web + Horizon + 插件 volume）
 
 ## 1. Compose 约束（不要改也能用）

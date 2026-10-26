@@ -2,6 +2,9 @@
 
 use Illuminate\Support\Facades\Route;
 use Plugin\FakaBridge\Controllers\WebhookController;
+use Plugin\FakaBridge\Controllers\AccountV2Controller;
+use Plugin\FakaBridge\Controllers\TrafficResetV2Controller;
+use Plugin\FakaBridge\Controllers\PaidResetV2Controller;
 
 /*
 |--------------------------------------------------------------------------
@@ -28,4 +31,15 @@ Route::prefix('plugin/faka-bridge')->group(function () {
     Route::get('plan-capacity', [WebhookController::class, 'planCapacity']);
     Route::post('plan-capacity', [WebhookController::class, 'setPlanCapacity']);
     Route::get('plan-catalog', [WebhookController::class, 'planCatalog']);
+    Route::post('v2/traffic-reset-preview', [TrafficResetV2Controller::class, 'preview']);
+    Route::post('v2/traffic-reset', [TrafficResetV2Controller::class, 'execute']);
+    Route::post('v2/traffic-reset-status', [TrafficResetV2Controller::class, 'status']);
+    Route::post('v2/traffic-reset-cancel', [TrafficResetV2Controller::class, 'cancel']);
+    Route::post('v2/paid-reset-preview', [PaidResetV2Controller::class, 'preview']);
+    Route::post('v2/paid-reset', [PaidResetV2Controller::class, 'execute']);
+    Route::post('v2/paid-reset-status', [PaidResetV2Controller::class, 'status']);
+    Route::post('v2/paid-reset-revoke', [PaidResetV2Controller::class, 'revoke']);
+    Route::post('v2/capabilities', [AccountV2Controller::class, 'capabilities']);
+    Route::post('v2/user-resolve', [AccountV2Controller::class, 'resolve']);
+    Route::post('v2/user-subscription', [AccountV2Controller::class, 'subscription']);
 });

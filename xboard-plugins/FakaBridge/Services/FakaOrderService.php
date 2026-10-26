@@ -120,6 +120,8 @@ class FakaOrderService
         /** @var FakaOrder $faka */
         $faka = $claim['order'];
 
+        $this->assertLegacyOrder($faka);
+
         if ($faka->isRevoked()) {
             throw new ApiException('订单已撤销，不可重新开通');
         }
@@ -222,6 +224,7 @@ class FakaOrderService
             if (!$locked) {
                 throw new ApiException('订单记录丢失');
             }
+            $this->assertLegacyOrder($locked);
 
             if ($locked->isTerminalSuccess()) {
                 return $this->successPayload($locked, '订单已处理,请勿重复回调', false, $mappedPeriod);
@@ -777,6 +780,7 @@ class FakaOrderService
         if (!$faka) {
             throw new ApiException('订单不存在');
         }
+        $this->assertLegacyOrder($faka);
 
         if ($faka->status === FakaOrder::STATUS_REVOKED) {
             return [
@@ -795,7 +799,7 @@ class FakaOrderService
 
         // Expire active subscription only when plan_id still matches this provision.
         // Avoid nuking a user who already upgraded to a different plan.
-        if (!empty($faka->email) && $faka->plan_id) {
+        if ($faka->period !== 'reset_traffic' && !empty($faka->email) && $faka->plan_id) {
             $user = User::where('email', strtolower(trim($faka->email)))->first();
             if ($user && (int) $user->plan_id === (int) $faka->plan_id) {
                 $stillActive = $user->expired_at === null || (int) $user->expired_at > time();
@@ -853,6 +857,13 @@ class FakaOrderService
         }
 
         throw new ApiException("未配置的 SKU: {$sku}，请在 SKU_MAPPING 中添加映射");
+    }
+
+    public function assertLegacyOrder(FakaOrder $order): void
+    {
+        if ((int) ($order->protocol_version ?? 1) !== 1) {
+            throw new ApiException('订单协议不匹配，请使用原始 v2 请求');
+        }
     }
 
     public function normalizePeriod(string $period): string

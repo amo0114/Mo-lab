@@ -1,0 +1,7 @@
+{
+  "query_enabled": {"description": "启用套餐查询", "type": "bool", "default": false},
+  "free_reset_enabled": {"description": "启用免费重置确认", "type": "bool", "default": false, "hint": "须先完成后端及 Xboard 隔离联调。关闭后仍可查询已知操作进度。"},
+  "paid_reset_purchase_enabled": {"description": "启用付费重置购买链接", "type": "bool", "default": false, "hint": "须后端稳定账号结账和 Xboard 付费能力就绪。仅发本人账号购买链接，不直接扣款。"},
+  "site_url": {"description": "MoNexus 站点", "type": "string", "default": "", "hint": "HTTPS 站点 origin，例如 https://shop.example.com，不含 /api、路径或查询参数。"},
+  "bot_shared_secret": {"description": "MoNexus 机器人共享密钥", "type": "string", "default": "", "secret": true, "hint": "对应 BOT_SHARED_SECRET；不要填写 Xboard bridge/admin 密钥。"}
+}

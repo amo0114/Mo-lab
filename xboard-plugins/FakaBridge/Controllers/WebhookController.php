@@ -107,6 +107,8 @@ class WebhookController extends Controller
                 ], 404);
             }
 
+            $this->orderService->assertLegacyOrder($fakaOrder);
+
             $json = [
                 'success' => true,
                 'order_no' => $fakaOrder->external_order_no,
