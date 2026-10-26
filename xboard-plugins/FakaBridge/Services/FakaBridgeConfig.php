@@ -59,6 +59,19 @@ class FakaBridgeConfig
         return $all[$key] ?? $default;
     }
 
+    /** One immutable config snapshot per v2 request, bypassing Octane singleton
+     * and PluginManager instance caches. Leave the v1 cached behavior intact. */
+    public function forV2Request(): self
+    {
+        $row = Plugin::query()->where('code', self::CODE)->where('is_enabled', true)->first();
+        if (!$row) throw new ProtocolV2Exception('BRIDGE_UNAVAILABLE', 503);
+        $values = json_decode($row->config ?? '{}', true, 16, JSON_THROW_ON_ERROR);
+        if (!is_array($values)) throw new ProtocolV2Exception('BRIDGE_UNAVAILABLE', 503);
+        $runtime = new self();
+        $runtime->config = $values;
+        return $runtime;
+    }
+
     public function hmacSecret(): string
     {
         $secret = (string) $this->get('hmac_secret', '');

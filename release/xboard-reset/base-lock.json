@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "baseImage": "ghcr.io/cedar2025/xboard@sha256:2633d6085768c57b5234b165a57569502728a795888602a7c233ccd3d4eb47b8",
+  "baseRevision": "935522d28bbeb666824facd8bdd674db8ab37df1",
+  "pluginVersion": "1.8.0",
+  "originalResetSha256": "147f535d7cb3a5cefb2569d6e03102be0ab71b89f21ea4d6ca79c683fe18a26d",
+  "patchedResetSha256": "75feffb645e22def3f2afb8789b141cb848e5b970e9bc468d5f704993c5798c9",
+  "orderServiceSha256": "50d712e59c90b60d71269dc08cb95aecd0b0808dde912145ee585fc2ec91b6bf"
+}

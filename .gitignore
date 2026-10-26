@@ -7,3 +7,8 @@ Thumbs.db
 .env
 *.key
 .ace-tool/
+
+# Python plugin tooling and runtime bytecode
+__pycache__/
+*.py[cod]
+.ruff_cache/

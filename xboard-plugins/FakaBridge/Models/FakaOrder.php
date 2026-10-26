@@ -10,7 +10,7 @@ class FakaOrder extends Model
     public const STATUS_PROCESSING = 'processing';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_FAILED = 'failed';
-    /** MoNexus refund / admin revoke — subscription should no longer be active. */
+    /** MoNexus refund / admin revoke. A reset revoke keeps the original subscription. */
     public const STATUS_REVOKED = 'revoked';
 
     protected $table = 'faka_orders';
@@ -27,12 +27,18 @@ class FakaOrder extends Model
         'completed_at',
         'error_log',
         'raw_payload',
+        'protocol_version',
+        'client_id',
+        'xboard_user_id',
+        'semantic_hash',
+        'result_payload',
     ];
 
     protected $casts = [
         'paid_at' => 'datetime',
         'completed_at' => 'datetime',
         'plan_id' => 'integer',
+        'protocol_version' => 'integer',
     ];
 
     /**

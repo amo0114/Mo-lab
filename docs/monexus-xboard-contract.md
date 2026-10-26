@@ -1,5 +1,7 @@
 # MoNexus ↔ Xboard 桥接契约
 
+新增的 v2 只读账号协议见 [FakaBridge v2 只读账号契约](./fakabridge-v2-read-contract.md)（本地 1.6.0，未部署，默认关闭）。下文保留现有 v1 契约及历史验收记录，不代表 v2 已上线。
+
 > **版本**: v1.2.0  
 > **更新**: 2026-07-29  
 > **状态**: 生产验收通过 ✅（路径无 `/api/v1`；域名 `v.uuwu.de`）+ 1.4.0 退款撤销
@@ -357,3 +359,15 @@ Xboard FakaBridge Plugin:
 - MoNexus 部署: `https://monexus.oai-o.com`
 - 上游: [cedar2025/Xboard](https://github.com/cedar2025/Xboard)
 - HMAC 算法: [RFC 2104](https://datatracker.ietf.org/doc/html/rfc2104)
+
+## B2 免费重置扩展（2026-10-25）
+
+插件 1.7.0 的签名 v2 免费 preview/execute/status/cancel、幂等事务及配置以 [免费重置契约](fakabridge-v2-reset-contract.md) 为准。该分支独立于原商业订单；1.8.0 的稳定 ID 付费协议见下文，v1 reset 退款也已改为不使原套餐过期。默认关闭、未部署。
+
+## B3a 机器人适配器（2026-10-25）
+
+[安装与命令](../astrbot-plugins/astrbot_plugin_monexus_xboard/README.md)。机器人只持有 BOT_SHARED_SECRET，所有命令私聊处理。MoNexus 增加纯只读 reset-intent-status 供确认响应丢失时找回 operation ID；operation=null 不表示可释放或新建。B3b1–B3b4 稳定 ID 付费协议、任务、网站结账及 QQ 购买引用已本地实现，新开关默认关闭；注册邮箱不充当远端身份。无生产部署或真实 QQ 验收。
+
+## B3b1 稳定 ID 付费协议（2026-10-25）
+
+插件 1.8.0 新增 paid-reset-preview/execute/status/revoke、商业身份迁移和默认关闭的独立付费开关；原生商业生命周期在同事务内校验实际重置成功，退款不使原套餐过期。协议、摘要门禁、定向 MySQL 验证及后续网站/worker/QQ 本地接入状态见 [付费契约](fakabridge-v2-paid-reset-contract.md)。只交付两端 transport 不等于已完成 QQ 购买闭环；未部署，购买入口仍关闭。
