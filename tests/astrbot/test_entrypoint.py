@@ -54,12 +54,18 @@ class Event:
     def plain_result(self, message):
         return message
 
+    def chain_result(self, chain):
+        return chain
+
 
 def load_entry():
     api = types.ModuleType("astrbot.api")
     api.AstrBotConfig = dict
     event = types.ModuleType("astrbot.api.event")
     event.AstrMessageEvent, event.filter = Event, Filters
+    components = types.ModuleType("astrbot.api.message_components")
+    components.At = lambda **fields: types.SimpleNamespace(kind="at", **fields)
+    components.Plain = lambda value: types.SimpleNamespace(kind="plain", text=value)
     star = types.ModuleType("astrbot.api.star")
     star.Context, star.Star = object, Star
     star.register = lambda *args, **kwargs: lambda cls: cls
@@ -70,6 +76,7 @@ def load_entry():
             "astrbot.api": api,
             "astrbot.api.event": event,
             "astrbot.api.star": star,
+            "astrbot.api.message_components": components,
         },
     ):
         sys.modules.pop("astrbot_plugin_monexus_xboard.main", None)
@@ -101,6 +108,7 @@ class Entry(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(schema["query_enabled"]["default"])
         self.assertFalse(schema["free_reset_enabled"]["default"])
+        self.assertFalse(schema["group_commands_enabled"]["default"])
         self.assertFalse(schema["paid_reset_purchase_enabled"]["default"])
         self.assertTrue(schema["bot_shared_secret"]["secret"])
 
@@ -146,6 +154,19 @@ class Entry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("私聊", response[0])
         self.assertTrue(event.stopped)
         self.plugin.commands.handle.assert_not_awaited()
+
+    async def test_enabled_group_uses_actual_sender_and_mentions_only_that_sender(self):
+        self.plugin.config["group_commands_enabled"] = True
+        self.plugin.commands = types.SimpleNamespace(handle=AsyncMock(return_value="正在处理"))
+        event = Event(sender="12345678", group="77777777")
+        response = [result async for result in self.plugin.confirm(event, "ABC2D7")]
+        self.plugin.commands.handle.assert_awaited_once_with(
+            "12345678", False, "confirm", "ABC2D7"
+        )
+        self.assertEqual(response[0][0].kind, "at")
+        self.assertEqual(response[0][0].qq, "12345678")
+        self.assertEqual(response[0][1].text, "\n正在处理")
+        self.assertTrue(event.stopped)
 
     async def test_private_invocation_passes_actual_sender_and_argument_separately(
         self,

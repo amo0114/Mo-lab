@@ -263,6 +263,57 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
             self.assertIn("私聊", await self.call(action, "ABC2D7", private=False))
         self.assertEqual(self.wire.requests, [])
 
+    async def test_group_flow_hides_email_and_requires_the_original_sender(self):
+        self.commands.group_enabled = True
+        profile = await self.call("profile", private=False)
+        self.assertIn("50.00 GiB", profile)
+        self.assertNotIn("ab***", profile)
+        self.assertNotIn("panel.test", profile)
+        accounts = await self.call("accounts", private=False)
+        self.assertIn("套餐账号 1", accounts)
+        self.assertNotIn("panel.test", accounts)
+        self.assertIn("已更新", await self.call("select", "2", private=False))
+        confirmation = await self.call("reset", private=False)
+        self.assertIn("ABC2D7", confirmation)
+        self.assertIn("由本人发送", confirmation)
+        self.assertNotIn("ab***", confirmation)
+        self.assertNotIn("panel.test", confirmation)
+        self.assertEqual(self.wire.effects, 0)
+        before_requests = len(self.wire.requests)
+        wrong_sender = await self.call("confirm", "ABC2D7", private=False, sender="87654321")
+        self.assertIn("先发送", wrong_sender)
+        self.assertEqual(len(self.wire.requests), before_requests)
+        self.assertEqual(self.wire.effects, 0)
+        await self.call("confirm", "ABC2D7", private=False)
+        self.assertEqual(self.wire.effects, 1)
+        self.wire.status = "succeeded"
+        self.assertIn("重置成功", await self.call("status", private=False))
+        self.assertEqual(self.wire.effects, 1)
+
+    async def test_group_and_private_confirmation_share_one_operation(self):
+        self.commands.group_enabled = True
+        await self.call("reset", private=False)
+        await asyncio.gather(
+            self.call("confirm", "ABC2D7", private=False),
+            self.call("confirm", "ABC2D7", private=True),
+        )
+        self.assertEqual(self.wire.effects, 1)
+
+    async def test_group_purchase_stays_private_even_when_group_commands_are_enabled(self):
+        self.commands.group_enabled = True
+        self.commands.purchase_enabled = True
+        self.assertIn("私聊", await self.call("purchase", private=False))
+        self.assertEqual(self.wire.requests, [])
+
+    async def test_group_reply_does_not_reveal_a_private_pending_intent_email(self):
+        await self.call("reset")
+        self.commands.group_enabled = True
+        result = await self.call("reset", private=False)
+        self.assertIn("ABC2D7", result)
+        self.assertNotIn("ab***", result)
+        self.assertNotIn("panel.test", result)
+        self.assertEqual(self.wire.effects, 0)
+
     async def test_identity_is_never_taken_from_command_argument(self):
         self.assertIn("50.00 GiB", await self.call("profile", "99999999"))
         self.assertEqual(
@@ -309,6 +360,15 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         body.update(canFreeReset=False, blockReason="RESET_FEATURE_NOT_ENABLED")
         self.wire.outcomes = [httpx.Response(200, json=body)]
         self.assertIn("未开放，次数会保留", await self.call("counts"))
+
+    async def test_zero_used_traffic_keeps_the_gift_without_prompting_a_reset(self):
+        body = clone(PROFILE)
+        body.update(canFreeReset=False, blockReason="NOTHING_TO_RESET")
+        self.wire.outcomes = [httpx.Response(200, json=body)]
+        result = await self.call("counts")
+        self.assertIn("可用 1 次", result)
+        self.assertIn("无需重置，免费次数会保留", result)
+        self.assertNotIn("发送“重置流量”", result)
 
     async def test_counts_distinguish_missing_pending_processing_and_used(self):
         for free, expected, forbidden in [

@@ -71,7 +71,7 @@ def _validate_reset_history(profile):
         raise BotError("INVALID_RESPONSE")
 
 
-def counts(profile, *, reset_enabled=False, purchase_enabled=False):
+def counts(profile, *, reset_enabled=False, purchase_enabled=False, public=False):
     _validate_reset_history(profile)
     free = profile.get("freeReset")
     if free is None:
@@ -100,11 +100,10 @@ def counts(profile, *, reset_enabled=False, purchase_enabled=False):
     if free["reserved"]:
         return "免费重置：1 次处理中。\n发送“重置进度”查看结果，请勿重复操作。"
     if free["consumed"]:
-        next_step = (
-            "再次重置需购买，发送“购买重置”查看价格。"
-            if purchase_enabled
-            else "再次重置需购买，购买入口暂未开放。"
-        )
+        next_step = "再次重置需购买，购买入口暂未开放。"
+        if purchase_enabled:
+            channel = "请私聊发送" if public else "发送"
+            next_step = f"再次重置需购买，{channel}“购买重置”查看价格。"
         return "免费重置：剩余 0 次（赠送机会已使用）。\n" + next_step
     if free["status"] == "pending_verification":
         return "免费重置：资格待确认，暂不可用。\n如已购买套餐，请稍后查询或联系站点客服核对。"
@@ -115,17 +114,21 @@ def counts(profile, *, reset_enabled=False, purchase_enabled=False):
         result.append("免费重置暂未开放，次数会保留。")
     elif profile.get("canFreeReset") is True:
         result.append("发送“重置流量”使用，确认后才会执行。")
+    elif profile.get("blockReason") == "NOTHING_TO_RESET":
+        result.append("当前没有已用流量，无需重置，免费次数会保留。")
+    elif profile.get("blockReason") == "SUBSCRIPTION_INELIGIBLE":
+        result.append("当前套餐暂不符合重置条件，请确认套餐有效状态或联系站点客服。")
     else:
         result.append("当前暂不能使用，请稍后重试或联系站点客服核对套餐状态。")
     return "\n".join(result)
 
 
-def profile_text(profile, *, reset_enabled=False, purchase_enabled=False):
+def profile_text(profile, *, reset_enabled=False, purchase_enabled=False, public=False):
     account = profile.get("account")
     freshness = profile.get("freshness")
     if not isinstance(account, dict) or not isinstance(freshness, dict):
         raise BotError("INVALID_RESPONSE")
-    result = [f"当前账号：{text(account.get('maskedEmail', '***'))}"]
+    result = [] if public else [f"当前账号：{text(account.get('maskedEmail', '***'))}"]
     sub = profile.get("subscription")
     if not isinstance(sub, dict):
         result.append("流量暂时查询不到，请稍后重试。")
@@ -144,7 +147,12 @@ def profile_text(profile, *, reset_enabled=False, purchase_enabled=False):
             ]
         )
     result.append(
-        counts(profile, reset_enabled=reset_enabled, purchase_enabled=purchase_enabled)
+        counts(
+            profile,
+            reset_enabled=reset_enabled,
+            purchase_enabled=purchase_enabled,
+            public=public,
+        )
     )
     if freshness.get("stale") or freshness.get("unavailable"):
         result.append("当前显示的是上次查询结果，请稍后再查最新流量。")

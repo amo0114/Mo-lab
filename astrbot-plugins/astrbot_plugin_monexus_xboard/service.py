@@ -39,6 +39,7 @@ class Commands:
         store,
         *,
         queries_enabled=False,
+        group_enabled=False,
         reset_enabled=False,
         purchase_enabled=False,
         clock=time.time,
@@ -46,14 +47,16 @@ class Commands:
         self.client, self.store = client, store
         self.queries_enabled, self.reset_enabled = queries_enabled, reset_enabled
         self.purchase_enabled = purchase_enabled
+        self.group_enabled = group_enabled
         self.clock = clock
         self._locks = weakref.WeakValueDictionary()
         self._scope = hashlib.sha256(client.origin.encode()).hexdigest()[:32]
 
     async def handle(self, sender, private, action, argument=""):
-        # Do not query or persist personal information for group invocations.
-        if not private:
+        if not private and not self.group_enabled:
             return PRIVATE_HINT
+        if not private and action == "purchase":
+            return "购买链接仅在私聊提供，请私聊发送“购买重置”。"
         if not re.fullmatch(r"[1-9][0-9]{4,19}", sender):
             return "无法识别当前 QQ 身份。"
         if not self.queries_enabled:
@@ -63,7 +66,9 @@ class Commands:
         async with lock:
             try:
                 state = await self.store.read(key)
-                return await self._handle(sender, key, state, action, argument.strip())
+                return await self._handle(
+                    sender, key, state, action, argument.strip(), private=private
+                )
             except BotError as error:
                 if error.code in {"NOT_FOUND", "XBOARD_BINDING_CHANGED"}:
                     try:
@@ -106,7 +111,7 @@ class Commands:
         await self.store.write(key, state)
         return result
 
-    async def _handle(self, sender, key, state, action, argument):
+    async def _handle(self, sender, key, state, action, argument, *, private=True):
         if action == "accounts":
             result = await self._call(sender, key, "accounts")
             rows = result.get("accounts")
@@ -126,9 +131,8 @@ class Commands:
                 )
                 status = "" if row["status"] == "active" else "（需核验）"
                 default = "（默认）" if row.get("isDefault") else ""
-                lines.append(
-                    f"{index}. {text(row.get('maskedEmail', '***'))}{default}{status}"
-                )
+                label = text(row.get("maskedEmail", "***")) if private else f"套餐账号 {index}"
+                lines.append(f"{index}. {label}{default}{status}")
             state["accounts"] = {"rows": snapshot, "expires": self.clock() + 600}
             await self.store.write(key, state)
             if not rows:
@@ -169,6 +173,7 @@ class Commands:
                 result,
                 reset_enabled=self.reset_enabled,
                 purchase_enabled=self.purchase_enabled,
+                public=not private,
             )
         if action == "purchase":
             if not self.purchase_enabled:
@@ -280,7 +285,8 @@ class Commands:
                 state.pop("intent", None)
                 await self.store.write(key, state)
                 return "确认已过期，请重新发送“重置流量”。"
-            return f"将重置 {pending['email']} 的当前套餐已用流量。\n本次消耗 1 次赠送机会，总流量和到期时间保持不变。\n请在 2 分钟内发送：确认重置 {code}"
+            target = pending["email"] if private else "你本次选择的套餐账号"
+            return f"将重置 {target} 的已用流量。\n本次消耗 1 次赠送机会，总流量和到期时间保持不变。\n请在 2 分钟内由本人发送：确认重置 {code}"
         if not re.fullmatch(r"[A-Z2-7]{6}", argument):
             return "请发送“确认重置 六位确认码”，确认码仅含大写字母和数字 2–7。"
         pending = state.get("intent")
