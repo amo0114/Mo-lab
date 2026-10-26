@@ -2,7 +2,7 @@ name: astrbot_plugin_monexus_xboard
 display_name: MoNexus 套餐与流量
 short_desc: 查询套餐与重置次数、赠送确认和付费购买入口
 desc: 复用 MoNexus 购买关联，通过私聊查询套餐、选择账号、确认一次赠送重置及获取付费重置链接。
-version: v0.2.0
+version: v0.2.1
 author: MoNexus
 repo: https://github.com/amo0114/Mo-lab
 support_platforms:
