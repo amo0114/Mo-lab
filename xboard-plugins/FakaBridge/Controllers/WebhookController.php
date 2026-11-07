@@ -55,6 +55,7 @@ class WebhookController extends Controller
                 'trade_no' => $result['trade_no'],
                 'order_no' => $result['order_no'],
                 'status' => $result['status'],
+                'tombstone' => $result['tombstone'] ?? false,
                 'message' => $result['message'],
             ];
             // Optional: MoNexus writes DeliveryRecord.expiresAt from this (unix seconds).
@@ -189,6 +190,7 @@ class WebhookController extends Controller
                 'status' => $result['status'],
                 'trade_no' => $result['trade_no'],
                 'expired_user' => $result['expired_user'],
+                'tombstone' => $result['tombstone'] ?? false,
                 'message' => $result['message'],
             ]);
         } catch (ApiException $e) {

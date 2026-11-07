@@ -225,6 +225,10 @@ class FakaOrderService
                 throw new ApiException('订单记录丢失');
             }
             $this->assertLegacyOrder($locked);
+            // A revoke may have committed between claim and this lock.
+            if ($locked->isRevoked()) {
+                throw new ApiException('订单已撤销，不可重新开通');
+            }
 
             if ($locked->isTerminalSuccess()) {
                 return $this->successPayload($locked, '订单已处理,请勿重复回调', false, $mappedPeriod);
@@ -401,7 +405,7 @@ class FakaOrderService
             // Separate connection write: claim must survive fulfill() rollback.
             DB::connection()->transaction(function () use ($faka, $message) {
                 $row = FakaOrder::query()->whereKey($faka->id)->lockForUpdate()->first();
-                if (!$row || $row->status === FakaOrder::STATUS_COMPLETED) {
+                if (!$row || $row->status === FakaOrder::STATUS_COMPLETED || $row->isRevoked()) {
                     return;
                 }
 
@@ -758,6 +762,7 @@ class FakaOrderService
     /**
      * Revoke a FakaBridge provision after MoNexus refund / admin action.
      * Best-effort: expire matching Xboard user subscription; mark faka_orders revoked.
+     * Unknown order_no writes a revoked tombstone so a late order-paid cannot open.
      * Idempotent on external_order_no.
      *
      * @return array{
@@ -765,6 +770,7 @@ class FakaOrderService
      *   status: string,
      *   trade_no: ?string,
      *   expired_user: bool,
+     *   tombstone?: bool,
      *   message: string
      * }
      */
@@ -774,11 +780,52 @@ class FakaOrderService
         if ($externalOrderNo === '') {
             throw new ApiException('缺少必要参数: order_no');
         }
+        $reasonText = $reason !== null && $reason !== ''
+            ? mb_substr($reason, 0, 500)
+            : 'MoNexus refund/revoke';
 
+        try {
+            return DB::transaction(fn () => $this->revokeLocked($externalOrderNo, $reasonText));
+        } catch (QueryException $e) {
+            // A concurrent order-paid claimed the row first; revoke that row instead.
+            if (!$this->isUniqueViolation($e)) {
+                throw $e;
+            }
+
+            return DB::transaction(fn () => $this->revokeLocked($externalOrderNo, $reasonText));
+        }
+    }
+
+    protected function revokeLocked(string $externalOrderNo, string $reasonText): array
+    {
         /** @var FakaOrder|null $faka */
-        $faka = FakaOrder::where('external_order_no', $externalOrderNo)->first();
+        $faka = FakaOrder::where('external_order_no', $externalOrderNo)->lockForUpdate()->first();
         if (!$faka) {
-            throw new ApiException('订单不存在');
+            // Tombstone: an order-paid still in flight (MoNexus timed out and gave up)
+            // must never open after this point; handleOrder/fulfill reject revoked rows.
+            FakaOrder::create([
+                'external_order_no' => $externalOrderNo,
+                'xboard_trade_no' => null,
+                'email' => '',
+                'sku' => '',
+                'plan_id' => 0,
+                'period' => '',
+                'status' => FakaOrder::STATUS_REVOKED,
+                'completed_at' => now(),
+                'error_log' => mb_substr('[tombstone] ' . $reasonText, 0, 2000),
+            ]);
+            Log::info('[FakaBridge] 未开通订单已写入撤销墓碑', [
+                'external_order_no' => $externalOrderNo,
+            ]);
+
+            return [
+                'order_no' => $externalOrderNo,
+                'status' => FakaOrder::STATUS_REVOKED,
+                'trade_no' => null,
+                'expired_user' => false,
+                'tombstone' => true,
+                'message' => '订单未开通，已写入撤销记录',
+            ];
         }
         $this->assertLegacyOrder($faka);
 
@@ -793,13 +840,11 @@ class FakaOrderService
         }
 
         $expiredUser = false;
-        $reasonText = $reason !== null && $reason !== ''
-            ? mb_substr($reason, 0, 500)
-            : 'MoNexus refund/revoke';
-
         // Expire active subscription only when plan_id still matches this provision.
-        // Avoid nuking a user who already upgraded to a different plan.
-        if ($faka->period !== 'reset_traffic' && !empty($faka->email) && $faka->plan_id) {
+        // Avoid nuking a user who already upgraded to a different plan, and never
+        // touch a user when this row never created an Xboard order.
+        if ($faka->period !== 'reset_traffic' && !empty($faka->email) && $faka->plan_id
+            && !empty($faka->xboard_trade_no)) {
             $user = User::where('email', strtolower(trim($faka->email)))->first();
             if ($user && (int) $user->plan_id === (int) $faka->plan_id) {
                 $stillActive = $user->expired_at === null || (int) $user->expired_at > time();
