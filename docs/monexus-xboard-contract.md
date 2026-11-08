@@ -229,6 +229,8 @@ MoNexus 侧建议:
 `status` 取值: `pending` | `processing` | `completed` | `failed`  
 `expired_at`（≥1.4.1，可选）：开通邮箱对应 Xboard 用户当前 `expired_at`（Unix 秒）。
 
+`404` 只表示查询时还没有 `faka_orders` 行，**不证明未开通**：超时的 `order-paid` 可能仍在路上，`failed` 行也可被同单号重试恢复。只有 `revoked` 是阻断后续开通的终态。
+
 ---
 
 ## 3. SKU 映射表(服务端硬编码)
@@ -371,3 +373,9 @@ Xboard FakaBridge Plugin:
 ## B3b1 稳定 ID 付费协议（2026-10-25）
 
 插件 1.8.0 新增 paid-reset-preview/execute/status/revoke、商业身份迁移和默认关闭的独立付费开关；原生商业生命周期在同事务内校验实际重置成功，退款不使原套餐过期。协议、摘要门禁、定向 MySQL 验证及后续网站/worker/QQ 本地接入状态见 [付费契约](fakabridge-v2-paid-reset-contract.md)。只交付两端 transport 不等于已完成 QQ 购买闭环；未部署，购买入口仍关闭。
+
+## v1 撤销墓碑（1.8.1，2026-11-07）
+
+`POST /plugin/faka-bridge/order-revoke` 遇到未知 `order_no` 不再返回「订单不存在」，而是写入 `status=revoked` 的墓碑行并返回 `success: true, status: "revoked", trade_no: null, tombstone: true`。此后同单号 `order-paid` 一律拒绝（claim 前和 fulfill 行锁内都检查），`markFailed` 不覆盖 `revoked`。撤销只在行上已有 `xboard_trade_no` 时才过期同套餐用户，未创建 Xboard 订单的行不触碰用户。
+
+MoNexus 对 v1 的「结果未知 / 404 / failed」不再直接退款，而是先撤销并拿到 `revoked` 确认后再退回冻结积分；旧插件对未知单号仍返回 400「订单不存在」，MoNexus 视为未确认并保留冻结待人工核对。验证：`tests/run-fakabridge-v1-tombstone.sh`。

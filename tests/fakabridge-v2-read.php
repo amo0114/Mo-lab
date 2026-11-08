@@ -114,7 +114,7 @@ check(!SignedProtocolV2::verify($v['method'], $v['path'], $v['timestampMs'], $v[
 
 [$status, $cap] = dispatch(signedRequest('capabilities', $base));
 check($status === 200 && $cap['capabilities']['resolve_by_order'] && !$cap['capabilities']['reset_idempotency'], 'only read capabilities');
-check($cap['plugin_version'] === '1.8.0' && strlen($cap['build_id']) === 64, 'version and deterministic build identity');
+check($cap['plugin_version'] === '1.8.1' && strlen($cap['build_id']) === 64, 'version and deterministic build identity');
 $same = signedRequest('capabilities', $base);
 check(dispatch($same)[0] === 200 && dispatch($same)[0] === 409, 'replay rejected across receiver instances');
 foreach (['timestamp' => '01', 'signature-version' => '1', 'signature' => str_repeat('a', 64)] as $key => $value) {
@@ -173,13 +173,13 @@ check(DB::table('v2_user')->count() === 2 && DB::table('v2_order')->count() === 
 $app->instance(PluginManager::class, $manager);
 check($manager->install('faka_bridge'), 'core PluginManager install');
 $row = App\Models\Plugin::where('code', 'faka_bridge')->first();
-check($row->version === '1.8.0' && json_decode($row->config, true)['v2_read_enabled'] === false, 'new install defaults reads off');
+check($row->version === '1.8.1' && json_decode($row->config, true)['v2_read_enabled'] === false, 'new install defaults reads off');
 $row->update(['version' => '1.5.0']);
 Schema::drop('faka_protocol_nonces');
 DB::table('migrations')->where('migration', '2026_10_25_000000_create_faka_protocol_nonces_table')->delete();
 check(DB::table('migrations')->count() === 3, 'simulate missing nonce migration');
 check($manager->update('faka_bridge'), 'core PluginManager update');
-check(App\Models\Plugin::where('code', 'faka_bridge')->first()->version === '1.8.0'
+check(App\Models\Plugin::where('code', 'faka_bridge')->first()->version === '1.8.1'
     && DB::table('migrations')->count() === 4 && Schema::hasTable('faka_protocol_nonces'), 'upgrade discovers new migration and preserves applied migration');
 // Production config path: warm the singleton and PluginManager caches, then
 // change only the DB. A v2 request must observe disable/rotation immediately.
